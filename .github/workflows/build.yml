@@ -14,8 +14,10 @@ jobs:
         include:
           - os: macos-latest
             artifact: ADC-VC726-Recovery-macOS
+            artifact-path: dist/ADC-VC726-Recovery.app
           - os: windows-latest
             artifact: ADC-VC726-Recovery-Windows
+            artifact-path: dist/ADC-VC726-Recovery
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,5 +38,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/
+          path: ${{ matrix.artifact-path }}
           if-no-files-found: error
