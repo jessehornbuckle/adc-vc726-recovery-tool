@@ -14,10 +14,10 @@ jobs:
         include:
           - os: macos-latest
             artifact: ADC-VC726-Recovery-macOS
-            artifact-path: dist/ADC-VC726-Recovery.app
+            archive: ADC-VC726-Recovery-macOS-arm64.zip
           - os: windows-latest
             artifact: ADC-VC726-Recovery-Windows
-            artifact-path: dist/ADC-VC726-Recovery
+            archive: ADC-VC726-Recovery-Windows-x64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +35,38 @@ jobs:
           --windowed
           --name ADC-VC726-Recovery
           run_app.py
+      - name: Smoke-test packaged macOS app
+        if: runner.os == 'macOS'
+        run: |
+          QT_QPA_PLATFORM=offscreen dist/ADC-VC726-Recovery.app/Contents/MacOS/ADC-VC726-Recovery &
+          app_pid=$!
+          sleep 3
+          kill -0 "$app_pid"
+          kill "$app_pid"
+          wait "$app_pid" || true
+      - name: Smoke-test packaged Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "dist/ADC-VC726-Recovery/ADC-VC726-Recovery.exe" -PassThru
+          Start-Sleep -Seconds 3
+          if ($process.HasExited) { throw "Packaged application exited unexpectedly" }
+          Stop-Process -Id $process.Id
+      - name: Archive macOS app
+        if: runner.os == 'macOS'
+        run: >-
+          ditto -c -k --sequesterRsrc --keepParent
+          dist/ADC-VC726-Recovery.app
+          ADC-VC726-Recovery-macOS-arm64.zip
+      - name: Archive Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          Compress-Archive
+          -Path dist/ADC-VC726-Recovery
+          -DestinationPath ADC-VC726-Recovery-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact-path }}
+          path: ${{ matrix.archive }}
           if-no-files-found: error
