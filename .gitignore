@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.dav
+*.zip
+build/
+dist/
+*.spec.bak
+*.spec
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
