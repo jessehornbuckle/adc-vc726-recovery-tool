@@ -2,7 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
 
 import vc726_recovery.gui as gui
 from vc726_recovery.constants import RECOVERED_CAMERA_URL
@@ -14,6 +15,46 @@ def _app() -> QApplication:
 
 def test_recovered_camera_url_is_the_hikvision_setup_address():
     assert RECOVERED_CAMERA_URL == "http://192.168.1.64"
+
+
+def test_uart_pinout_assets_are_bundled_and_readable():
+    _app()
+    for filename in ("camera-uart-pinout.jpg", "usb-ttl-adapter-pinout.jpg"):
+        path = gui.bundled_asset_path(filename)
+        assert path.is_file()
+        assert not QPixmap(str(path)).isNull()
+
+
+def test_uart_pinout_dialog_shows_mapping_and_both_photos():
+    _app()
+    dialog = gui.UartPinoutDialog()
+    try:
+        assert "Camera TXD → Adapter RXD" in dialog.mapping_label.text()
+        assert "Camera RXD → Adapter TXD" in dialog.mapping_label.text()
+        assert "DO NOT CONNECT" in dialog.mapping_label.text()
+        assert dialog.pinout_tabs.count() == 2
+        for index in range(dialog.pinout_tabs.count()):
+            page = dialog.pinout_tabs.widget(index)
+            assert isinstance(page, QScrollArea)
+            image = page.widget()
+            assert isinstance(image, QLabel)
+            assert image.pixmap() is not None
+            assert not image.pixmap().isNull()
+    finally:
+        dialog.close()
+
+
+def test_uart_pinout_button_opens_reference_dialog(monkeypatch):
+    _app()
+    opened = []
+    monkeypatch.setattr(gui.UartPinoutDialog, "exec", lambda self: opened.append(True))
+    window = gui.RecoveryWindow()
+    try:
+        window.pinout_button.click()
+    finally:
+        window.close()
+
+    assert opened == [True]
 
 
 def test_success_state_keeps_camera_login_action_available():

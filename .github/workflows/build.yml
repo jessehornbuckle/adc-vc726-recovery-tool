@@ -92,6 +92,7 @@ jobs:
             --osx-bundle-identifier com.jessehornbuckle.adc-vc726-recovery \
             --codesign-identity "$SIGNING_IDENTITY" \
             --add-binary "helper-dist/vc726-tftp-helper:." \
+            --add-data "src/vc726_recovery/assets:vc726_recovery/assets" \
             run_app.py
 
           app_version="$(python -c 'from importlib.metadata import version; from packaging.version import Version; print(Version(version("vc726-recovery")).base_version)')"
@@ -118,6 +119,7 @@ jobs:
           --clean
           --windowed
           --name ADC-VC726-Recovery
+          --add-data "src/vc726_recovery/assets:vc726_recovery/assets"
           run_app.py
       - name: Smoke-test packaged macOS app
         if: runner.os == 'macOS'

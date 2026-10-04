@@ -10,11 +10,13 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QPalette
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QGridLayout,
@@ -28,6 +30,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -91,6 +94,73 @@ class EventBridge(QObject):
     tftp_progress = Signal(int, int)
     firmware_done = Signal(object)
     firmware_error = Signal(str)
+
+
+def bundled_asset_path(filename: str) -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "vc726_recovery" / "assets" / filename
+    return Path(__file__).with_name("assets") / filename
+
+
+class UartPinoutDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("UART pinout reference")
+        self.resize(980, 760)
+
+        layout = QVBoxLayout(self)
+        title = QLabel("ADC-VC726 camera ↔ 3.3 V USB-to-TTL adapter")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        self.mapping_label = QLabel(
+            "<b>Camera GND → Adapter GND</b><br>"
+            "<b>Camera TXD → Adapter RXD</b><br>"
+            "<b>Camera RXD → Adapter TXD</b><br>"
+            "<span style='color:#b00020'><b>Camera VCC/3.3 V → DO NOT CONNECT</b></span><br><br>"
+            "Set the USB-to-TTL adapter to <b>3.3 V logic</b>. Power the camera only by PoE."
+        )
+        self.mapping_label.setWordWrap(True)
+        self.mapping_label.setStyleSheet(
+            "QLabel { background:#fff3cd; color:#332700; padding:12px; border-radius:6px; }"
+        )
+        layout.addWidget(self.mapping_label)
+
+        self.pinout_tabs = QTabWidget()
+        self.pinout_tabs.addTab(
+            self._image_page("camera-uart-pinout.jpg"), "Camera connector"
+        )
+        self.pinout_tabs.addTab(
+            self._image_page("usb-ttl-adapter-pinout.jpg"), "USB-to-TTL adapter"
+        )
+        layout.addWidget(self.pinout_tabs, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    @staticmethod
+    def _image_page(filename: str) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        image_label = QLabel()
+        image_label.setObjectName(filename)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = QPixmap(str(bundled_asset_path(filename)))
+        if pixmap.isNull():
+            image_label.setText(f"Reference image is missing: {filename}")
+            image_label.setStyleSheet("color:#b00020; padding:20px;")
+        else:
+            image_label.setPixmap(
+                pixmap.scaledToWidth(880, Qt.TransformationMode.SmoothTransformation)
+            )
+        image_label.adjustSize()
+        scroll.setWidget(image_label)
+        scroll.setWidgetResizable(False)
+        return scroll
 
 
 class RecoveryWindow(QMainWindow):
@@ -263,6 +333,13 @@ class RecoveryWindow(QMainWindow):
         cable_warning.setStyleSheet("color:#b54500; font-weight:600;")
         layout.addWidget(cable_warning)
 
+        self.pinout_button = QPushButton("View UART pinout photos…")
+        self.pinout_button.setToolTip(
+            "Shows the ADC-VC726 connector and USB-to-TTL adapter wiring"
+        )
+        self.pinout_button.clicked.connect(self._show_uart_pinout)
+        layout.addWidget(self.pinout_button)
+
         controls = QGridLayout()
         self.capture_button = QPushButton("1. Capture and save hardware profile")
         self.capture_button.clicked.connect(self._capture_hardware_profile)
@@ -301,6 +378,9 @@ class RecoveryWindow(QMainWindow):
         self.terminal.setPlaceholderText("Serial boot output will appear here…")
         layout.addWidget(self.terminal, 1)
         return page
+
+    def _show_uart_pinout(self) -> None:
+        UartPinoutDialog(self).exec()
 
     def _build_flash_tab(self) -> QWidget:
         page = QWidget()
