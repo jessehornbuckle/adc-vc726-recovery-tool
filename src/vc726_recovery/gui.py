@@ -8,8 +8,8 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QCloseEvent, QFont, QPalette
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QCloseEvent, QDesktopServices, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -43,6 +43,7 @@ from .constants import (
     EXPECTED_NAND,
     EXPECTED_SERVER_IP,
     EXPECTED_SOC,
+    FIRMWARE_SOURCE_URL,
     FLASH_COMMAND,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
@@ -186,6 +187,15 @@ class RecoveryWindow(QMainWindow):
         )
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        firmware_download = QPushButton("Open official firmware download page")
+        firmware_download.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(FIRMWARE_SOURCE_URL))
+        )
+        firmware_download.setToolTip(
+            "Opens Hikvision Europe's V5.5.82_Build181211 download page in your browser"
+        )
+        layout.addWidget(firmware_download)
         layout.addStretch()
         return page
 

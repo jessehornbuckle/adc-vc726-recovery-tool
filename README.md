@@ -9,7 +9,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.1` supports only this proven combination:
+Version `0.1.0-alpha.2` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -45,7 +45,8 @@ It intentionally does **not** automate U-Boot's destructive `format` command in 
 - Ground, TX, and RX connections—**never connect adapter VCC**
 - Normal PoE power for the camera
 - A direct or isolated Ethernet connection
-- Official Hikvision package `IPC_G1_EN_STD_5.5.82_181211`
+- Official Hikvision package
+  [`IPC_G1_EN_STD_5.5.82_181211`](https://www.hikvisioneurope.com/eu/portal/?dir=portal%2FTechnical%20Materials%2F00%20%20Network%20Camera%2F00%20%20Product%20Firmware%2FG1%20Platform%2FG1%20platform%20%28DS-2CD2XX5%202XX3%202XX7G1%203XX3%203XX5%20XM67X6%29%2F2XX5%202XX3%202XX7G1%203XX5%203XX3%20XM67X6non-Fisheye%20Multilanguage%2FV5.5.82_Build181211)
 
 The firmware is not included in this repository. Select the package's `digicap.dav`; the app accepts only this SHA-256:
 

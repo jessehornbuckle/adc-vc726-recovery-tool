@@ -1,7 +1,7 @@
 """Known-good values from the verified ADC-VC726 recovery."""
 
 APP_NAME = "ADC-VC726 Recovery Assistant"
-APP_VERSION = "0.1.0-alpha.1"
+APP_VERSION = "0.1.0-alpha.2"
 
 EXPECTED_MODEL = "ADC-VC726"
 EXPECTED_BOARD = "PCB-131948 REV 2.0"
@@ -15,6 +15,14 @@ RECOVERED_CAMERA_IP = "192.168.1.64"
 EXPECTED_FIRMWARE_NAME = "digicap.dav"
 EXPECTED_FIRMWARE_SIZE = 36_390_527
 EXPECTED_FIRMWARE_SHA256 = "0d7f4edf93e3db610a2d663514220ca3b45138fa039dfecafb01860b3b6ea6df"
+FIRMWARE_SOURCE_URL = (
+    "https://www.hikvisioneurope.com/eu/portal/?dir="
+    "portal%2FTechnical%20Materials%2F00%20%20Network%20Camera%2F"
+    "00%20%20Product%20Firmware%2FG1%20Platform%2F"
+    "G1%20platform%20%28DS-2CD2XX5%202XX3%202XX7G1%203XX3%203XX5%20XM67X6%29%2F"
+    "2XX5%202XX3%202XX7G1%203XX5%203XX3%20XM67X6non-Fisheye%20Multilanguage%2F"
+    "V5.5.82_Build181211"
+)
 
 SERIAL_BAUDRATE = 115_200
 SERIAL_BYTESIZE = 8
