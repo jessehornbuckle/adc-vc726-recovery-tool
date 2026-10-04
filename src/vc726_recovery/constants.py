@@ -1,7 +1,7 @@
 """Known-good values from the verified ADC-VC726 recovery."""
 
 APP_NAME = "ADC-VC726 Recovery Assistant"
-APP_VERSION = "0.1.0-alpha.10"
+APP_VERSION = "0.1.0-alpha.11"
 
 EXPECTED_MODEL = "ADC-VC726"
 EXPECTED_BOARD = "PCB-131948 REV 2.0"
@@ -36,6 +36,8 @@ FLASH_COMMAND = "upd digicap.dav"
 FORMAT_HELP_COMMAND = "help format"
 FORMAT_COMMAND = "format"
 FORMAT_PARTITIONS = ("app_pri", "app_sec", "cfg_pri", "cfg_sec")
+LINUX_HELP_COMMAND = "help"
+LINUX_REBOOT_COMMAND = "reboot"
 BOOT_INTERRUPT = b"\x15"  # Ctrl+U
 RISK_PHRASE = "I ACCEPT BRICK RISK"
 

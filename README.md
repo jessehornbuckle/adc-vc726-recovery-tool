@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.10/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.11/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.10).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.11).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.10` supports only this proven combination:
+Version `0.1.0-alpha.11` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -47,8 +47,10 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 - requires a typed brick-risk confirmation before any destructive command;
 - asks U-Boot to describe `format` and requires exactly `app_pri`, `app_sec`, `cfg_pri`,
   and `cfg_sec` before allowing it to run;
-- waits for formatting to finish and for `HKVS #` to return before sending
-  `upd digicap.dav`;
+- waits for formatting to finish, checks the protected Linux shell's command list, and uses
+  software reboot only when `reboot` is explicitly advertised;
+- sends Ctrl+U across that reboot, waits for `HKVS #`, and then sends `upd digicap.dav`;
+- falls back to a guided PoE power cycle when software reboot is not advertised;
 - watches output for known success, TFTP, NAND, and short-write patterns;
 - lets the user save a complete serial recovery log.
 
@@ -98,7 +100,8 @@ uv run python run_app.py
    app can temporarily assign `192.168.1.128/24` to the camera-facing network adapter.
 10. Confirm that the built-in TFTP server is listening on UDP port 69.
 11. Review every safety gate and enter the required risk phrase. The app verifies U-Boot's
-    exact four format targets, formats them, waits for `HKVS #`, and only then sends the update.
+    exact four format targets, formats them, safely probes for software reboot, catches U-Boot,
+    and only then sends the update. Follow the PoE prompt only if software reboot is unavailable.
 12. Do not interrupt power during formatting, transfer, or NAND writing.
 13. After reboot, activate the camera locally at `192.168.1.64` and configure ONVIF/RTSP.
 

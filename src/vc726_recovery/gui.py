@@ -50,6 +50,8 @@ from .constants import (
     FORMAT_PARTITIONS,
     HARDWARE_PROFILE_BEGIN,
     HARDWARE_PROFILE_END,
+    LINUX_HELP_COMMAND,
+    LINUX_REBOOT_COMMAND,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
     SUPPORTED_CAMERA_IPS,
@@ -66,8 +68,10 @@ from .firmware import FirmwareReport, verify_firmware
 from .format_workflow import (
     FormatHelpOutcome,
     FormatRunOutcome,
+    LinuxRebootHelpOutcome,
     classify_format_help,
     classify_format_run,
+    classify_linux_reboot_help,
 )
 from .network import NetworkSetupError
 from .privileged_tftp import PrivilegedMacTftpServer
@@ -338,7 +342,8 @@ class RecoveryWindow(QMainWindow):
         format_warning = QLabel(
             "Before flashing, the app asks U-Boot what its format command erases. It proceeds "
             "only if U-Boot reports exactly app_pri, app_sec, cfg_pri, and cfg_sec, then waits "
-            "for format to finish before sending the verified firmware update command."
+            "for format to finish. It safely checks whether Linux supports reboot, catches "
+            "U-Boot automatically, and then sends the verified firmware update command."
         )
         format_warning.setWordWrap(True)
         format_warning.setStyleSheet("color:#b54500;")
@@ -568,6 +573,9 @@ class RecoveryWindow(QMainWindow):
             )
             return
         self.power_cycle_timer.stop()
+        if self.destructive_stage == "format_poweroff":
+            self._begin_post_format_interrupt()
+            return
         self.power_cycle_ready = True
         self.interrupt_button.setEnabled(self.serial.connected)
         self.workflow_status.setText(
@@ -771,8 +779,8 @@ class RecoveryWindow(QMainWindow):
             "Format and flash this camera?",
             "The app will first verify that U-Boot's format command targets only:\n\n"
             f"{', '.join(FORMAT_PARTITIONS)}\n\n"
-            f"It will then run `{FORMAT_COMMAND}` and, only after U-Boot returns successfully, "
-            f"send `{FLASH_COMMAND}`. Continue?",
+            f"It will then run `{FORMAT_COMMAND}`, use a verified software reboot when this "
+            f"Linux shell supports it, catch U-Boot, and send `{FLASH_COMMAND}`. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
@@ -793,6 +801,7 @@ class RecoveryWindow(QMainWindow):
         stage_labels = {
             "format_help": "Checking U-Boot's exact format targets…",
             "format_run": "FORMATTING app/config partitions — do not power off",
+            "linux_help": "FORMAT COMPLETE — checking safe software reboot support…",
             "update": "TRANSFERRING AND WRITING firmware — do not power off",
         }
         self.status_label.setText(stage_labels[stage])
@@ -812,6 +821,82 @@ class RecoveryWindow(QMainWindow):
         self._append_system(f"STOPPED: {message}")
         self._update_gate()
         QMessageBox.critical(self, "Format safety check stopped", message)
+
+    def _begin_software_reboot(self) -> None:
+        self._append_system(
+            "LINUX REBOOT PREFLIGHT PASSED: protected shell advertises reboot\n"
+            f"SENDING REBOOT COMMAND: {LINUX_REBOOT_COMMAND}"
+        )
+        self.destructive_stage = "awaiting_uboot"
+        self.destructive_start_index = len(self.transcript)
+        self.bootloader_start_index = self.destructive_start_index
+        self.status_label.setText("REBOOTING — catching HKVS # automatically")
+        self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
+        try:
+            self.serial.send_line(LINUX_REBOOT_COMMAND)
+        except (OSError, RuntimeError) as exc:
+            self._block_destructive_sequence(f"Unable to send Linux reboot command: {exc}")
+            return
+        threading.Thread(
+            target=self.serial.interrupt_boot,
+            kwargs={"attempts": 300},
+            daemon=True,
+        ).start()
+        QTimer.singleShot(30_500, self._post_format_interrupt_timeout)
+
+    def _begin_post_format_power_cycle(self) -> None:
+        self.destructive_stage = "format_poweroff"
+        self.destructive_start_index = None
+        self.status_label.setText("FORMAT COMPLETE — unplug PoE for the guided reboot")
+        self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
+        self._append_system(
+            "FORMAT COMPLETE: software reboot is not advertised. A controlled PoE power "
+            "cycle is required to return to U-Boot."
+        )
+        QMessageBox.information(
+            self,
+            "Format complete — unplug PoE",
+            "Formatting completed successfully, but this protected shell does not advertise "
+            "a software reboot command.\n\nUnplug Ethernet/PoE now, then click OK. The app "
+            "will enforce a 10-second power-off wait and tell you when to reconnect it.",
+        )
+        self.power_cycle_seconds = 10
+        self.workflow_status.setText(
+            "Keep Ethernet/PoE unplugged — post-format wait: 10 seconds remaining."
+        )
+        self.power_cycle_timer.start()
+
+    def _begin_post_format_interrupt(self) -> None:
+        self._append_system(
+            "Post-format power-off wait complete. Sending Ctrl+U for up to 30 seconds; "
+            "reconnect PoE now."
+        )
+        self.destructive_stage = "awaiting_uboot"
+        self.destructive_start_index = len(self.transcript)
+        self.bootloader_start_index = self.destructive_start_index
+        self.status_label.setText("RECONNECT PoE NOW — catching HKVS # automatically")
+        self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
+        threading.Thread(
+            target=self.serial.interrupt_boot,
+            kwargs={"attempts": 300},
+            daemon=True,
+        ).start()
+        QMessageBox.information(
+            self,
+            "Reconnect PoE now",
+            "Reconnect Ethernet/PoE now. The app is sending Ctrl+U and will automatically "
+            "send the verified firmware update when HKVS # appears.",
+        )
+        QTimer.singleShot(30_500, self._post_format_interrupt_timeout)
+
+    def _post_format_interrupt_timeout(self) -> None:
+        if self.destructive_stage != "awaiting_uboot":
+            return
+        self._block_destructive_sequence(
+            "HKVS # was not detected during the post-format Ctrl+U window. The firmware "
+            "update was not sent. Keep the serial log and return the camera to U-Boot before "
+            "trying again."
+        )
 
     def _append_serial(self, text: str) -> None:
         self.transcript += text
@@ -860,7 +945,14 @@ class RecoveryWindow(QMainWindow):
             return
         if self.destructive_stage == "format_run":
             format_outcome = classify_format_run(stage_output)
-            if format_outcome == FormatRunOutcome.COMPLETE:
+            if format_outcome == FormatRunOutcome.REBOOT_REQUIRED:
+                self._start_destructive_stage(
+                    "linux_help",
+                    LINUX_HELP_COMMAND,
+                    "FORMAT COMPLETE: Linux # returned\n"
+                    "LINUX REBOOT PREFLIGHT: listing protected-shell commands",
+                )
+            elif format_outcome == FormatRunOutcome.BOOTLOADER_READY:
                 self._start_destructive_stage(
                     "update",
                     FLASH_COMMAND,
@@ -870,6 +962,22 @@ class RecoveryWindow(QMainWindow):
             elif format_outcome == FormatRunOutcome.ERROR:
                 self._block_destructive_sequence(
                     "U-Boot reported a format error. The firmware update was not sent."
+                )
+            return
+        if self.destructive_stage == "linux_help":
+            reboot_help = classify_linux_reboot_help(stage_output)
+            if reboot_help == LinuxRebootHelpOutcome.SUPPORTED:
+                self._begin_software_reboot()
+            elif reboot_help == LinuxRebootHelpOutcome.UNSUPPORTED:
+                self._begin_post_format_power_cycle()
+            return
+        if self.destructive_stage == "awaiting_uboot":
+            if "HKVS #" in stage_output.upper():
+                self._start_destructive_stage(
+                    "update",
+                    FLASH_COMMAND,
+                    "POST-FORMAT HKVS # DETECTED\n"
+                    f"SENDING WRITE COMMAND: {FLASH_COMMAND}",
                 )
             return
 

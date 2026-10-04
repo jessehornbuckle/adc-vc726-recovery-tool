@@ -17,8 +17,15 @@ class FormatHelpOutcome(str, Enum):
 
 class FormatRunOutcome(str, Enum):
     PENDING = "pending"
-    COMPLETE = "complete"
+    REBOOT_REQUIRED = "reboot_required"
+    BOOTLOADER_READY = "bootloader_ready"
     ERROR = "error"
+
+
+class LinuxRebootHelpOutcome(str, Enum):
+    PENDING = "pending"
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
 
 
 _HELP_LINE = re.compile(
@@ -26,6 +33,7 @@ _HELP_LINE = re.compile(
     re.IGNORECASE,
 )
 _PROMPT = re.compile(r"HKVS\s*#", re.IGNORECASE)
+_LINUX_PROMPT = re.compile(r"(?:^|[\r\n])#(?:[ \t]+#)?(?=[ \t]*(?:[\r\n]|$))")
 _ERROR_MARKERS = (
     "unknown command",
     "command not found",
@@ -55,10 +63,29 @@ def classify_format_help(output: str) -> FormatHelpOutcome:
 
 
 def classify_format_run(output: str) -> FormatRunOutcome:
-    """Accept format completion only after U-Boot returns to its prompt without an error."""
+    """Recognize the observed format completion and post-format bootloader handoff."""
     text = output.casefold()
     if any(marker in text for marker in _ERROR_MARKERS):
         return FormatRunOutcome.ERROR
     if _PROMPT.search(output):
-        return FormatRunOutcome.COMPLETE
+        return FormatRunOutcome.BOOTLOADER_READY
+    done = text.rfind("done!")
+    if done >= 0 and _LINUX_PROMPT.search(output, done + len("done!")):
+        return FormatRunOutcome.REBOOT_REQUIRED
     return FormatRunOutcome.PENDING
+
+
+def classify_linux_reboot_help(output: str) -> LinuxRebootHelpOutcome:
+    """Check the protected shell's completed help listing for a reboot command."""
+    prompt = _LINUX_PROMPT.search(output)
+    if prompt is None:
+        return LinuxRebootHelpOutcome.PENDING
+
+    body = output[: prompt.start()]
+    lines = body.splitlines()
+    if lines and lines[0].strip().casefold() == "help":
+        lines = lines[1:]
+    command_listing = "\n".join(lines)
+    if re.search(r"\breboot\b", command_listing, re.IGNORECASE):
+        return LinuxRebootHelpOutcome.SUPPORTED
+    return LinuxRebootHelpOutcome.UNSUPPORTED

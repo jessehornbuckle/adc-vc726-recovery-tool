@@ -43,10 +43,12 @@ sends any destructive command.
 ## Gate 6: exact format preflight
 
 The app first sends the read-only `help format` command. It proceeds only if this U-Boot
-instance advertises exactly `app_pri`, `app_sec`, `cfg_pri`, and `cfg_sec`. It then sends
-`format`, waits for the `HKVS #` prompt to return without a format error, and only then sends
-`upd digicap.dav`. A missing prompt, command error, or different target list stops the sequence
-before the firmware update is sent.
+instance advertises exactly `app_pri`, `app_sec`, `cfg_pri`, and `cfg_sec`. After `format`
+finishes in Hikvision's protected Linux shell, the app sends read-only `help`. It uses the
+Linux `reboot` command only when that completed command list explicitly advertises it, starts
+Ctrl+U across the reboot, waits for `HKVS #`, and then sends `upd digicap.dav`. If software
+reboot is not advertised, the app falls back to a guided PoE power cycle. A missing prompt,
+command error, or different target list stops the sequence before the firmware update is sent.
 
 ## Stop conditions
 
