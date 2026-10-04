@@ -1,5 +1,5 @@
 import shlex
-import subprocess
+from pathlib import Path
 
 from vc726_recovery.privileged_tftp import PrivilegedMacTftpServer
 
@@ -11,16 +11,31 @@ def test_privileged_server_uses_one_macos_admin_command(monkeypatch, tmp_path):
     firmware.write_bytes(b"placeholder")
     calls = []
 
-    def fake_run(command, **_kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "", "")
+    class FakeLauncher:
+        returncode = None
+
+        def __init__(self, command, **_kwargs):
+            calls.append(command)
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+
+        def terminate(self):
+            self.returncode = -15
 
     monkeypatch.setattr("vc726_recovery.privileged_tftp.route_interface", lambda _ip: "en5")
     monkeypatch.setattr(
         "vc726_recovery.privileged_tftp._helper_path", lambda: ["/Applications/Test Helper"]
     )
     monkeypatch.setattr("vc726_recovery.privileged_tftp.tempfile.mkdtemp", lambda **_k: str(work))
-    monkeypatch.setattr("vc726_recovery.privileged_tftp.subprocess.run", fake_run)
+    monkeypatch.setattr("vc726_recovery.privileged_tftp.subprocess.Popen", FakeLauncher)
 
     server = PrivilegedMacTftpServer(
         "192.168.1.128", 69, firmware, "192.168.1.66"
@@ -38,7 +53,11 @@ def test_privileged_server_uses_one_macos_admin_command(monkeypatch, tmp_path):
     assert calls[0][:2] == ["/usr/bin/osascript", "-e"]
     script = calls[0][2]
     assert "with administrator privileges" in script
+    assert "with timeout of 86400 seconds" in script
     assert "'/Applications/Test Helper'" in script
+    assert "/usr/bin/nohup" not in script
+    assert "exec " in script
+    assert "</dev/null" in script
     assert "--interface en5" in script
     assert "--host 192.168.1.128" in script
     normalized_script = script.replace("\\\\", "\\")
@@ -58,3 +77,13 @@ def test_startup_detail_uses_helper_log(tmp_path):
     server._log_path.write_text("launch failure detail", encoding="utf-8")
 
     assert server._startup_detail({}) == "TFTP helper failed to launch: launch failure detail"
+
+
+def test_startup_detail_uses_osascript_error():
+    server = PrivilegedMacTftpServer(
+        "192.168.1.128", 69, Path("digicap.dav"), "192.168.1.66"
+    )
+
+    assert server._startup_detail({}, "authorization failed") == (
+        "macOS could not start the TFTP helper: authorization failed"
+    )

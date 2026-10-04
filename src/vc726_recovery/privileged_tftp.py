@@ -30,7 +30,11 @@ def _helper_path() -> list[str]:
 
 def _apple_script(command: str) -> str:
     escaped = command.replace("\\", "\\\\").replace('"', '\\"')
-    return f'do shell script "{escaped}" with administrator privileges'
+    return (
+        'with timeout of 86400 seconds\n'
+        f'  do shell script "{escaped}" with administrator privileges\n'
+        "end timeout"
+    )
 
 
 class PrivilegedMacTftpServer:
@@ -55,6 +59,7 @@ class PrivilegedMacTftpServer:
         self._state_path: Path | None = None
         self._stop_path: Path | None = None
         self._log_path: Path | None = None
+        self._launcher: subprocess.Popen[str] | None = None
         self._running = False
         self._monitor: threading.Thread | None = None
 
@@ -93,32 +98,32 @@ class PrivilegedMacTftpServer:
             "--parent-pid",
             str(os.getpid()),
         ]
-        shell_command = "/usr/bin/nohup " + " ".join(shlex.quote(part) for part in command)
-        shell_command += f" >{shlex.quote(str(self._log_path))} 2>&1 &"
-        result = subprocess.run(
+        shell_command = "exec " + " ".join(shlex.quote(part) for part in command)
+        shell_command += f" </dev/null >{shlex.quote(str(self._log_path))} 2>&1"
+        self._launcher = subprocess.Popen(
             ["/usr/bin/osascript", "-e", _apple_script(shell_command)],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
         )
-        if result.returncode != 0:
-            self._discard_directory()
-            message = result.stderr.strip()
-            if "User canceled" in message or "(-128)" in message:
-                raise NetworkSetupError("Administrator approval was cancelled")
-            raise NetworkSetupError(message or "macOS could not start the TFTP helper")
-        deadline = time.monotonic() + 8
+        deadline = time.monotonic() + 60
         state: dict[str, object] = {}
         while time.monotonic() < deadline:
             state = self._read_state()
             if state.get("status") in {"running", "error"}:
                 break
+            if self._launcher.poll() is not None:
+                break
             time.sleep(0.1)
         if state.get("status") != "running":
             if self._stop_path:
                 self._stop_path.touch(exist_ok=True)
-            detail = self._startup_detail(state)
+            launcher_message = self._launcher_message()
+            detail = self._startup_detail(state, launcher_message)
+            self._finish_launcher()
             self._discard_directory()
+            if "User canceled" in launcher_message or "(-128)" in launcher_message:
+                raise NetworkSetupError("Administrator approval was cancelled")
             raise NetworkSetupError(detail)
         self._running = True
         self.log(str(state.get("message") or f"TFTP listening on {self.host}:{self.port}"))
@@ -131,6 +136,7 @@ class PrivilegedMacTftpServer:
         if self._monitor and self._monitor is not threading.current_thread():
             self._monitor.join(timeout=5)
         self._running = False
+        self._finish_launcher()
         self._discard_directory()
 
     def _read_state(self) -> dict[str, object]:
@@ -160,7 +166,18 @@ class PrivilegedMacTftpServer:
                 return
             time.sleep(0.2)
 
-    def _startup_detail(self, state: dict[str, object]) -> str:
+    def _launcher_message(self) -> str:
+        if not self._launcher or self._launcher.poll() is None:
+            return ""
+        try:
+            stdout, stderr = self._launcher.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            return ""
+        return "\n".join(part.strip() for part in (stderr, stdout) if part.strip())
+
+    def _startup_detail(
+        self, state: dict[str, object], launcher_message: str = ""
+    ) -> str:
         message = str(state.get("message") or "").strip()
         if message:
             return message
@@ -171,7 +188,22 @@ class PrivilegedMacTftpServer:
                 output = ""
             if output:
                 return f"TFTP helper failed to launch: {output[-1200:]}"
+        if launcher_message:
+            return f"macOS could not start the TFTP helper: {launcher_message[-1200:]}"
         return "TFTP helper did not start and produced no diagnostic output"
+
+    def _finish_launcher(self) -> None:
+        if not self._launcher:
+            return
+        try:
+            self._launcher.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._launcher.terminate()
+            try:
+                self._launcher.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        self._launcher = None
 
     def _discard_directory(self) -> None:
         if self._directory:
