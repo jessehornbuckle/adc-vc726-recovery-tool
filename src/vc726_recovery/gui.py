@@ -52,6 +52,8 @@ from .constants import (
     HARDWARE_PROFILE_END,
     LINUX_HELP_COMMAND,
     LINUX_REBOOT_COMMAND,
+    RECOVERED_CAMERA_IP,
+    RECOVERED_CAMERA_URL,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
     SUPPORTED_CAMERA_IPS,
@@ -338,6 +340,13 @@ class RecoveryWindow(QMainWindow):
         self.flash_button.setMinimumHeight(46)
         self.flash_button.clicked.connect(self._flash)
         gate_layout.addWidget(self.flash_button)
+        self.camera_login_button = QPushButton(
+            f"Open camera setup/login — {RECOVERED_CAMERA_IP}"
+        )
+        self.camera_login_button.setMinimumHeight(42)
+        self.camera_login_button.clicked.connect(self._open_camera_setup)
+        self.camera_login_button.setVisible(False)
+        gate_layout.addWidget(self.camera_login_button)
         layout.addWidget(gate_group)
 
         format_warning = QLabel(
@@ -744,11 +753,13 @@ class RecoveryWindow(QMainWindow):
         self.flash_button.setEnabled(gate.ready and not self.destructive_blocked)
         if self.flash_succeeded:
             self.flash_button.setEnabled(False)
+            self.camera_login_button.setVisible(True)
+            self.camera_login_button.setEnabled(True)
             self.status_label.setText("✓ FLASH SUCCESSFUL — camera rebooting into Hikvision")
             self.status_label.setStyleSheet("color:#187a2f; font-weight:700; padding:4px;")
             self.blockers_label.setText(
                 "Firmware writing completed successfully. Let the camera finish its first "
-                "boot before disconnecting power."
+                f"boot, then open its setup/login page at {RECOVERED_CAMERA_URL}."
             )
         elif self.destructive_blocked:
             self.status_label.setText("STOPPED — destructive sequence halted")
@@ -1016,12 +1027,36 @@ class RecoveryWindow(QMainWindow):
             )
             self._update_gate()
             self.tabs.setCurrentIndex(2)
-            QMessageBox.information(
+            self._show_flash_success()
+
+    def _show_flash_success(self) -> None:
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Icon.Information)
+        message.setWindowTitle("Flash successful")
+        message.setText("The camera firmware was flashed successfully.")
+        message.setInformativeText(
+            "Keep PoE connected while the first Hikvision boot finishes. Then use this "
+            "address to activate, configure, or log in to the camera:\n\n"
+            f"{RECOVERED_CAMERA_URL}\n\n"
+            "If the page is not ready yet, wait a minute and use the same green button "
+            "on the finished screen. TFTP is no longer needed after the reboot."
+        )
+        open_button = message.addButton(
+            "Open camera setup/login", QMessageBox.ButtonRole.AcceptRole
+        )
+        message.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        message.setDefaultButton(open_button)
+        message.exec()
+        if message.clickedButton() is open_button:
+            self._open_camera_setup()
+
+    def _open_camera_setup(self) -> None:
+        if not QDesktopServices.openUrl(QUrl(RECOVERED_CAMERA_URL)):
+            QMessageBox.warning(
                 self,
-                "Flash successful",
-                "The camera reported Write Flash [OK] and UPDATE COMPLETE, then began its "
-                "automatic reboot.\n\nKeep PoE connected while the first Hikvision boot "
-                "finishes. TFTP is no longer needed after the reboot.",
+                "Could not open browser",
+                "Open this address in a browser connected to the same network:\n\n"
+                f"{RECOVERED_CAMERA_URL}",
             )
 
     def _save_log_as(self) -> None:
