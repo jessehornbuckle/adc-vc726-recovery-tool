@@ -360,7 +360,7 @@ wheels = [
 
 [[package]]
 name = "vc726-recovery"
-version = "0.1.1a8"
+version = "0.1.1a9"
 source = { editable = "." }
 dependencies = [
     { name = "pyserial" },

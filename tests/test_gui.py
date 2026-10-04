@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QCloseEvent, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
 import vc726_recovery.gui as gui
@@ -94,6 +94,97 @@ def test_uart_pinout_button_opens_reference_dialog(monkeypatch):
         window.close()
 
     assert opened == [True]
+
+
+def test_flash_lock_disables_every_main_action_button_and_restores_states():
+    _app()
+    window = gui.RecoveryWindow()
+    try:
+        buttons = window._flash_action_buttons()
+        previous_states = [button.isEnabled() for button in buttons]
+
+        window._set_flash_controls_locked(True)
+
+        assert window.flash_controls_locked
+        assert all(not button.isEnabled() for button in buttons)
+
+        window._set_flash_controls_locked(False)
+
+        assert not window.flash_controls_locked
+        assert [button.isEnabled() for button in buttons] == previous_states
+    finally:
+        window._set_flash_controls_locked(False)
+        window.close()
+
+
+def test_flash_lock_stays_active_until_terminal_update_outcome(monkeypatch):
+    _app()
+    window = gui.RecoveryWindow()
+    monkeypatch.setattr(window, "_show_flash_success", lambda: None)
+    try:
+        window._set_flash_controls_locked(True)
+        window.destructive_stage = "update"
+        window.destructive_start_index = 0
+        window.transcript = "firmware transfer still running"
+
+        window._check_update_outcome()
+
+        assert window.flash_controls_locked
+        assert all(not button.isEnabled() for button in window._flash_action_buttons())
+
+        window.transcript += "\nWrite Flash [OK]\nUPDATE COMPLETE\n"
+        window._check_update_outcome()
+
+        assert not window.flash_controls_locked
+        assert window.flash_succeeded
+        assert not window.flash_button.isEnabled()
+        assert window.camera_login_button.isEnabled()
+    finally:
+        window._set_flash_controls_locked(False)
+        window.close()
+
+
+def test_flash_lock_releases_after_a_confirmed_stopped_state():
+    _app()
+    window = gui.RecoveryWindow()
+    try:
+        window._set_flash_controls_locked(True)
+        window.destructive_stage = "update"
+        window.destructive_start_index = 0
+        window.transcript = "failed: short write /dav/IElang.tar"
+
+        window._check_update_outcome()
+
+        assert not window.flash_controls_locked
+        assert window.destructive_blocked
+        assert not window.flash_button.isEnabled()
+        assert "short-write" in window.status_label.text()
+    finally:
+        window._set_flash_controls_locked(False)
+        window.close()
+
+
+def test_window_close_is_blocked_while_flash_controls_are_locked(monkeypatch):
+    _app()
+    window = gui.RecoveryWindow()
+    warnings = []
+    monkeypatch.setattr(
+        gui.QMessageBox,
+        "warning",
+        lambda *args: warnings.append(args[2]),
+    )
+    try:
+        window._set_flash_controls_locked(True)
+        event = QCloseEvent()
+
+        window.closeEvent(event)
+
+        assert not event.isAccepted()
+        assert warnings
+        assert "locked until" in warnings[0]
+    finally:
+        window._set_flash_controls_locked(False)
+        window.close()
 
 
 def test_success_state_keeps_camera_login_action_available():

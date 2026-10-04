@@ -258,6 +258,8 @@ class RecoveryWindow(QMainWindow):
         self.destructive_start_index: int | None = None
         self.destructive_blocked = False
         self.flash_succeeded = False
+        self.flash_controls_locked = False
+        self._flash_lock_button_states: list[tuple[QPushButton, bool]] = []
 
         self._build_ui()
         self._refresh_ports()
@@ -339,12 +341,12 @@ class RecoveryWindow(QMainWindow):
         firmware_layout = QGridLayout(firmware_group)
         self.firmware_path = QLineEdit()
         self.firmware_path.setReadOnly(True)
-        browse = QPushButton("Choose digicap.dav…")
-        browse.clicked.connect(self._choose_firmware)
+        self.firmware_browse_button = QPushButton("Choose digicap.dav…")
+        self.firmware_browse_button.clicked.connect(self._choose_firmware)
         self.firmware_status = QLabel("No firmware selected")
         self.firmware_status.setWordWrap(True)
         firmware_layout.addWidget(self.firmware_path, 0, 0)
-        firmware_layout.addWidget(browse, 0, 1)
+        firmware_layout.addWidget(self.firmware_browse_button, 0, 1)
         firmware_layout.addWidget(self.firmware_status, 1, 0, 1, 2)
         firmware_layout.addWidget(
             QLabel(f"Required SHA-256: {EXPECTED_FIRMWARE_SHA256}"), 2, 0, 1, 2
@@ -358,14 +360,14 @@ class RecoveryWindow(QMainWindow):
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        firmware_download = QPushButton("Open official firmware download page")
-        firmware_download.clicked.connect(
+        self.firmware_download_button = QPushButton("Open official firmware download page")
+        self.firmware_download_button.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(FIRMWARE_SOURCE_URL))
         )
-        firmware_download.setToolTip(
+        self.firmware_download_button.setToolTip(
             "Opens Hikvision Europe's V5.5.82_Build181211 download page in your browser"
         )
-        layout.addWidget(firmware_download)
+        layout.addWidget(self.firmware_download_button)
         layout.addStretch()
         return page
 
@@ -376,12 +378,12 @@ class RecoveryWindow(QMainWindow):
         connection = QGroupBox("3.3 V UART — 115200 8-N-1")
         connection_layout = QHBoxLayout(connection)
         self.port_combo = QComboBox()
-        refresh = QPushButton("Refresh")
-        refresh.clicked.connect(self._refresh_ports)
+        self.refresh_ports_button = QPushButton("Refresh")
+        self.refresh_ports_button.clicked.connect(self._refresh_ports)
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self._toggle_serial)
         connection_layout.addWidget(self.port_combo, 1)
-        connection_layout.addWidget(refresh)
+        connection_layout.addWidget(self.refresh_ports_button)
         connection_layout.addWidget(self.connect_button)
         layout.addWidget(connection)
 
@@ -410,12 +412,12 @@ class RecoveryWindow(QMainWindow):
         self.probe_button = QPushButton("3. Verify read-only fingerprint")
         self.probe_button.clicked.connect(self._run_probe)
         self.probe_button.setEnabled(False)
-        save_log = QPushButton("Save log…")
-        save_log.clicked.connect(self._save_log_as)
+        self.save_log_button = QPushButton("Save log…")
+        self.save_log_button.clicked.connect(self._save_log_as)
         controls.addWidget(self.capture_button, 0, 0)
         controls.addWidget(self.interrupt_button, 0, 1)
         controls.addWidget(self.probe_button, 0, 2)
-        controls.addWidget(save_log, 0, 3)
+        controls.addWidget(self.save_log_button, 0, 3)
         layout.addLayout(controls)
 
         self.workflow_status = QLabel(
@@ -887,11 +889,48 @@ class RecoveryWindow(QMainWindow):
             serial_connected=self.serial.connected,
         )
 
+    def _flash_action_buttons(self) -> tuple[QPushButton, ...]:
+        return (
+            self.firmware_browse_button,
+            self.firmware_download_button,
+            self.refresh_ports_button,
+            self.connect_button,
+            self.pinout_button,
+            self.capture_button,
+            self.interrupt_button,
+            self.probe_button,
+            self.save_log_button,
+            self.tftp_button,
+            self.flash_button,
+            self.camera_login_button,
+        )
+
+    def _set_flash_controls_locked(self, locked: bool) -> None:
+        if locked == self.flash_controls_locked:
+            return
+        if locked:
+            self._flash_lock_button_states = [
+                (button, button.isEnabled()) for button in self._flash_action_buttons()
+            ]
+            self.flash_controls_locked = True
+            for button, _was_enabled in self._flash_lock_button_states:
+                button.setEnabled(False)
+            return
+
+        self.flash_controls_locked = False
+        for button, was_enabled in self._flash_lock_button_states:
+            button.setEnabled(was_enabled)
+        self._flash_lock_button_states = []
+
     def _update_gate(self) -> None:
         if not hasattr(self, "flash_button"):
             return
         gate = self._gate()
-        self.flash_button.setEnabled(gate.ready and not self.destructive_blocked)
+        self.flash_button.setEnabled(
+            gate.ready
+            and not self.destructive_blocked
+            and not self.flash_controls_locked
+        )
         if self.flash_succeeded:
             self.flash_button.setEnabled(False)
             self.camera_login_button.setVisible(True)
@@ -947,7 +986,7 @@ class RecoveryWindow(QMainWindow):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self.flash_button.setEnabled(False)
+        self._set_flash_controls_locked(True)
         self.tabs.setCurrentIndex(1)
         self._start_destructive_stage(
             "format_help",
@@ -956,14 +995,15 @@ class RecoveryWindow(QMainWindow):
         )
 
     def _start_destructive_stage(self, stage: str, command: str, message: str) -> None:
+        self._set_flash_controls_locked(True)
         self._append_system(message)
         self.destructive_stage = stage
         self.destructive_start_index = len(self.transcript)
         stage_labels = {
-            "format_help": "Checking U-Boot's exact format targets…",
-            "format_run": "FORMATTING app/config partitions — do not power off",
-            "linux_help": "FORMAT COMPLETE — checking safe software reboot support…",
-            "update": "TRANSFERRING AND WRITING firmware — do not power off",
+            "format_help": "🔒 CONTROLS LOCKED — checking U-Boot's exact format targets…",
+            "format_run": "🔒 CONTROLS LOCKED — FORMATTING; do not power off",
+            "linux_help": "🔒 CONTROLS LOCKED — checking safe reboot support…",
+            "update": "🔒 CONTROLS LOCKED — TRANSFERRING AND WRITING; do not power off",
         }
         self.status_label.setText(stage_labels[stage])
         self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
@@ -972,6 +1012,7 @@ class RecoveryWindow(QMainWindow):
         except (OSError, RuntimeError) as exc:
             self.destructive_stage = None
             self.destructive_start_index = None
+            self._set_flash_controls_locked(False)
             QMessageBox.critical(self, "Unable to send command", str(exc))
             self._update_gate()
 
@@ -980,6 +1021,7 @@ class RecoveryWindow(QMainWindow):
         self.destructive_start_index = None
         self.destructive_blocked = True
         self._append_system(f"STOPPED: {message}")
+        self._set_flash_controls_locked(False)
         self._update_gate()
         QMessageBox.critical(self, "Format safety check stopped", message)
 
@@ -991,7 +1033,9 @@ class RecoveryWindow(QMainWindow):
         self.destructive_stage = "awaiting_uboot"
         self.destructive_start_index = len(self.transcript)
         self.bootloader_start_index = self.destructive_start_index
-        self.status_label.setText("REBOOTING — catching HKVS # automatically")
+        self.status_label.setText(
+            "🔒 CONTROLS LOCKED — REBOOTING and catching HKVS # automatically"
+        )
         self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
         try:
             self.serial.send_line(LINUX_REBOOT_COMMAND)
@@ -1008,7 +1052,9 @@ class RecoveryWindow(QMainWindow):
     def _begin_post_format_power_cycle(self) -> None:
         self.destructive_stage = "format_poweroff"
         self.destructive_start_index = None
-        self.status_label.setText("FORMAT COMPLETE — unplug PoE for the guided reboot")
+        self.status_label.setText(
+            "🔒 CONTROLS LOCKED — FORMAT COMPLETE; unplug PoE for the guided reboot"
+        )
         self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
         self._append_system(
             "FORMAT COMPLETE: software reboot is not advertised. A controlled PoE power "
@@ -1035,7 +1081,9 @@ class RecoveryWindow(QMainWindow):
         self.destructive_stage = "awaiting_uboot"
         self.destructive_start_index = len(self.transcript)
         self.bootloader_start_index = self.destructive_start_index
-        self.status_label.setText("RECONNECT PoE NOW — catching HKVS # automatically")
+        self.status_label.setText(
+            "🔒 CONTROLS LOCKED — RECONNECT PoE NOW; catching HKVS # automatically"
+        )
         self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
         threading.Thread(
             target=self.serial.interrupt_boot,
@@ -1071,6 +1119,7 @@ class RecoveryWindow(QMainWindow):
         if (
             self.bootloader_start_index is not None
             and "HKVS #" in self.transcript[-128:].upper()
+            and not self.flash_controls_locked
         ):
             self._reset_interrupt_button()
             if self.hardware_profile:
@@ -1146,6 +1195,9 @@ class RecoveryWindow(QMainWindow):
         if outcome == UpdateOutcome.SHORT_WRITE:
             self.destructive_stage = None
             self.destructive_start_index = None
+            self.destructive_blocked = True
+            self._set_flash_controls_locked(False)
+            self._update_gate()
             self.status_label.setText(
                 "STOPPED — known short-write pattern detected; do not power off"
             )
@@ -1153,12 +1205,16 @@ class RecoveryWindow(QMainWindow):
         elif outcome == UpdateOutcome.NAND_ERROR:
             self.destructive_stage = None
             self.destructive_start_index = None
+            self.destructive_blocked = True
+            self._set_flash_controls_locked(False)
+            self._update_gate()
             self.status_label.setText("STOPPED — unexpected NAND error detected")
             self.status_label.setStyleSheet("color:#b00020; font-weight:700; padding:4px;")
         elif outcome == UpdateOutcome.SUCCESS:
             self.destructive_stage = None
             self.destructive_start_index = None
             self.flash_succeeded = True
+            self._set_flash_controls_locked(False)
             self._append_system(
                 "FLASH SUCCESSFUL: Write Flash [OK] and UPDATE COMPLETE confirmed"
             )
@@ -1234,6 +1290,16 @@ class RecoveryWindow(QMainWindow):
         self._append_system(f"Saved recovery log to {path}")
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 (Qt API)
+        if self.flash_controls_locked:
+            event.ignore()
+            QMessageBox.warning(
+                self,
+                "Flash in progress",
+                "The recovery controls and window close action remain locked until the "
+                "flash process reaches a confirmed success or stopped state. Do not "
+                "disconnect PoE, Ethernet, or UART.",
+            )
+            return
         if self.tftp:
             self.tftp.stop()
         self.serial.disconnect()
