@@ -27,7 +27,81 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - name: Build application
+      - name: Import Apple Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          certificate_path="$RUNNER_TEMP/developer-id-application.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" |
+              sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' |
+              head -n 1
+          )"
+          if [[ -z "$signing_identity" ]]; then
+            echo "Developer ID Application identity was not found in the imported certificate."
+            exit 1
+          fi
+
+          echo "SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Build signed macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m PyInstaller \
+            --noconfirm \
+            --clean \
+            --windowed \
+            --name ADC-VC726-Recovery \
+            --osx-bundle-identifier com.jessehornbuckle.adc-vc726-recovery \
+            --codesign-identity "$SIGNING_IDENTITY" \
+            run_app.py
+
+          app_version="$(python -c 'from importlib.metadata import version; from packaging.version import Version; print(Version(version("vc726-recovery")).base_version)')"
+          info_plist="dist/ADC-VC726-Recovery.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$info_plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $app_version" "$info_plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" "$info_plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $GITHUB_RUN_NUMBER" "$info_plist"
+
+          codesign \
+            --force \
+            --options runtime \
+            --timestamp \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --sign "$SIGNING_IDENTITY" \
+            dist/ADC-VC726-Recovery.app
+          codesign --verify --deep --strict --verbose=2 dist/ADC-VC726-Recovery.app
+
+      - name: Build Windows application
+        if: runner.os == 'Windows'
         run: >-
           python -m PyInstaller
           --noconfirm
@@ -54,10 +128,34 @@ jobs:
           Stop-Process -Id $process.Id
       - name: Archive macOS app
         if: runner.os == 'macOS'
-        run: >-
-          ditto -c -k --sequesterRsrc --keepParent
-          dist/ADC-VC726-Recovery.app
-          ADC-VC726-Recovery-macOS-arm64.zip
+        shell: bash
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+
+          app_path="dist/ADC-VC726-Recovery.app"
+          notarization_archive="$RUNNER_TEMP/ADC-VC726-Recovery-notarization.zip"
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$notarization_archive"
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$api_key_path"
+          chmod 600 "$api_key_path"
+
+          xcrun notarytool submit "$notarization_archive" \
+            --key "$api_key_path" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$app_path" \
+            ADC-VC726-Recovery-macOS-arm64.zip
       - name: Archive Windows app
         if: runner.os == 'Windows'
         shell: pwsh

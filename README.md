@@ -83,7 +83,9 @@ See [Hardware profile](docs/HARDWARE_PROFILE.md) and [Safety model](docs/SAFETY.
 
 - Network settings are checked by binding the required IP but are not changed automatically.
 - Binding UDP port 69 can require administrator rights on macOS/Linux.
-- Windows and macOS builds are produced by GitHub Actions but are not code-signed yet.
+- Windows builds are currently unsigned. macOS builds are signed with an Apple
+  Developer ID certificate, notarized by Apple, and checked with Gatekeeper before
+  GitHub Actions publishes the downloadable artifact.
 - The automatic success detector is advisory; the serial log remains the source of truth.
 - The known short-write repair is documented but not automated.
 
