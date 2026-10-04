@@ -1,5 +1,10 @@
 from vc726_recovery.constants import HARDWARE_PROFILE_BEGIN, HARDWARE_PROFILE_END
-from vc726_recovery.fingerprint import FingerprintAnalyzer, UpdateOutcome, classify_update_output
+from vc726_recovery.fingerprint import (
+    FingerprintAnalyzer,
+    UpdateOutcome,
+    classify_update_output,
+    find_protected_shell_prompt,
+)
 
 PROVEN_HARDWARE_PROFILE = f"""
 {HARDWARE_PROFILE_BEGIN}
@@ -90,6 +95,23 @@ def test_actual_second_camera_dmesg_format_is_recognized():
     assert report.nand
     assert report.mac_match
     assert report.readonly_gate_passed
+
+
+def test_protected_shell_prompt_is_found_when_async_log_follows_it():
+    captured = (
+        "dmesg\r\n"
+        "[    1.980446] NAND device: Manufacturer ID: 0x2c, Chip ID: 0xf1\r\n"
+        "# # [10-03 20:29:14][pid:655][SYSINIT][ERROR] asynchronous log\r\n"
+    )
+
+    match = find_protected_shell_prompt(captured)
+
+    assert match is not None
+    assert captured[: match.end()].endswith("# #")
+
+
+def test_hash_banner_is_not_mistaken_for_protected_shell_prompt():
+    assert find_protected_shell_prompt("######## camera banner ########\r\n") is None
 
 
 def test_update_outcome_prefers_short_write_over_generic_failure():

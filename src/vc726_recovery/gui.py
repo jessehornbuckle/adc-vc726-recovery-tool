@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import socket
 import threading
 from datetime import datetime
@@ -57,6 +56,7 @@ from .fingerprint import (
     FingerprintReport,
     UpdateOutcome,
     classify_update_output,
+    find_protected_shell_prompt,
 )
 from .firmware import FirmwareReport, verify_firmware
 from .safety import ManualConfirmations, SafetyGate
@@ -470,7 +470,7 @@ class RecoveryWindow(QMainWindow):
             self.capture_timer.stop()
             return
         captured = self.transcript[self.capture_start_index :]
-        returned_prompt = re.search(r"(?:^|[\r\n])#\s*(?:[\r\n]|$)", captured)
+        returned_prompt = find_protected_shell_prompt(captured)
         if returned_prompt is None:
             return
         self.capture_timer.stop()

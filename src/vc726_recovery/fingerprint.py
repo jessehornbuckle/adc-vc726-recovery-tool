@@ -6,7 +6,20 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .constants import HARDWARE_PROFILE_BEGIN, HARDWARE_PROFILE_END, SUPPORTED_CAMERA_IPS
+from .constants import (
+    HARDWARE_PROFILE_BEGIN,
+    HARDWARE_PROFILE_END,
+    SUPPORTED_CAMERA_IPS,
+)
+
+_PROTECTED_SHELL_PROMPT = re.compile(
+    r"(?:^|[\r\n])#(?:[ \t]+#)?(?=[ \t]*(?:[\r\n]|$|\[))"
+)
+
+
+def find_protected_shell_prompt(text: str) -> re.Match[str] | None:
+    """Find a Linux prompt even when asynchronous camera logs follow it."""
+    return _PROTECTED_SHELL_PROMPT.search(text)
 
 
 class UpdateOutcome(str, Enum):
