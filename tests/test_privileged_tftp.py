@@ -40,8 +40,9 @@ def test_privileged_server_uses_one_macos_admin_command(monkeypatch, tmp_path):
     assert "'/Applications/Test Helper'" in script
     assert "--interface en5" in script
     assert "--host 192.168.1.128" in script
-    assert f"--file {work / 'digicap.dav'}" in script
-    assert f">{work / 'helper.log'}" in script
+    normalized_script = script.replace("\\\\", "\\")
+    assert f"--file {work / 'digicap.dav'}" in normalized_script
+    assert f">{work / 'helper.log'}" in normalized_script
     assert (work / "digicap.dav").read_bytes() == b"placeholder"
     server.stop()
 
