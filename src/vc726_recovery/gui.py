@@ -45,6 +45,9 @@ from .constants import (
     EXPECTED_SOC,
     FIRMWARE_SOURCE_URL,
     FLASH_COMMAND,
+    FORMAT_COMMAND,
+    FORMAT_HELP_COMMAND,
+    FORMAT_PARTITIONS,
     HARDWARE_PROFILE_BEGIN,
     HARDWARE_PROFILE_END,
     RISK_PHRASE,
@@ -60,6 +63,12 @@ from .fingerprint import (
     find_protected_shell_prompt,
 )
 from .firmware import FirmwareReport, verify_firmware
+from .format_workflow import (
+    FormatHelpOutcome,
+    FormatRunOutcome,
+    classify_format_help,
+    classify_format_run,
+)
 from .network import NetworkSetupError
 from .privileged_tftp import PrivilegedMacTftpServer
 from .safety import ManualConfirmations, SafetyGate
@@ -108,6 +117,9 @@ class RecoveryWindow(QMainWindow):
         self.bootloader_start_index: int | None = None
         self.power_cycle_seconds = 0
         self.power_cycle_ready = False
+        self.destructive_stage: str | None = None
+        self.destructive_start_index: int | None = None
+        self.destructive_blocked = False
 
         self._build_ui()
         self._refresh_ports()
@@ -317,16 +329,16 @@ class RecoveryWindow(QMainWindow):
         self.blockers_label = QLabel()
         self.blockers_label.setWordWrap(True)
         gate_layout.addWidget(self.blockers_label)
-        self.flash_button = QPushButton(f"Run {FLASH_COMMAND}")
+        self.flash_button = QPushButton("Format app/config partitions, then flash")
         self.flash_button.setMinimumHeight(46)
         self.flash_button.clicked.connect(self._flash)
         gate_layout.addWidget(self.flash_button)
         layout.addWidget(gate_group)
 
         format_warning = QLabel(
-            "If the update reports a short write involving IElang.tar, this version stops "
-            "and preserves "
-            "the log. It intentionally does not automate U-Boot's destructive format command."
+            "Before flashing, the app asks U-Boot what its format command erases. It proceeds "
+            "only if U-Boot reports exactly app_pri, app_sec, cfg_pri, and cfg_sec, then waits "
+            "for format to finish before sending the verified firmware update command."
         )
         format_warning.setWordWrap(True)
         format_warning.setStyleSheet("color:#b54500;")
@@ -720,9 +732,15 @@ class RecoveryWindow(QMainWindow):
         if not hasattr(self, "flash_button"):
             return
         gate = self._gate()
-        self.flash_button.setEnabled(gate.ready)
-        if gate.ready:
-            self.status_label.setText("✓ All safety gates passed — ready for final confirmation")
+        self.flash_button.setEnabled(gate.ready and not self.destructive_blocked)
+        if self.destructive_blocked:
+            self.status_label.setText("STOPPED — destructive sequence halted")
+            self.status_label.setStyleSheet("color:#b00020; font-weight:700; padding:4px;")
+            self.blockers_label.setText(
+                "The format/flash safety sequence stopped. Save the serial log and stop."
+            )
+        elif gate.ready:
+            self.status_label.setText("✓ All safety gates passed — ready to format and flash")
             self.status_label.setStyleSheet("color:#187a2f; font-weight:700; padding:4px;")
             self.blockers_label.setText(
                 "All automatic and manual checks passed. Keep PoE and Ethernet stable "
@@ -741,7 +759,8 @@ class RecoveryWindow(QMainWindow):
         phrase, accepted = QInputDialog.getText(
             self,
             "Final destructive-action confirmation",
-            "This command writes firmware to NAND. Do not disconnect power.\n\n"
+            "This sequence erases the four application/config partitions, then writes firmware "
+            "to NAND. Do not disconnect power.\n\n"
             f"Type exactly: {RISK_PHRASE}",
         )
         if not accepted or phrase.strip() != RISK_PHRASE:
@@ -749,21 +768,50 @@ class RecoveryWindow(QMainWindow):
             return
         answer = QMessageBox.question(
             self,
-            "Send firmware update command?",
-            f"Send `{FLASH_COMMAND}` to the verified HKVS bootloader now?",
+            "Format and flash this camera?",
+            "The app will first verify that U-Boot's format command targets only:\n\n"
+            f"{', '.join(FORMAT_PARTITIONS)}\n\n"
+            f"It will then run `{FORMAT_COMMAND}` and, only after U-Boot returns successfully, "
+            f"send `{FLASH_COMMAND}`. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        self._append_system(f"SENDING WRITE COMMAND: {FLASH_COMMAND}")
-        try:
-            self.serial.send_line(FLASH_COMMAND)
-        except (OSError, RuntimeError) as exc:
-            QMessageBox.critical(self, "Unable to send command", str(exc))
-            return
         self.flash_button.setEnabled(False)
         self.tabs.setCurrentIndex(1)
+        self._start_destructive_stage(
+            "format_help",
+            FORMAT_HELP_COMMAND,
+            "FORMAT PREFLIGHT: verifying U-Boot's exact format targets",
+        )
+
+    def _start_destructive_stage(self, stage: str, command: str, message: str) -> None:
+        self._append_system(message)
+        self.destructive_stage = stage
+        self.destructive_start_index = len(self.transcript)
+        stage_labels = {
+            "format_help": "Checking U-Boot's exact format targets…",
+            "format_run": "FORMATTING app/config partitions — do not power off",
+            "update": "TRANSFERRING AND WRITING firmware — do not power off",
+        }
+        self.status_label.setText(stage_labels[stage])
+        self.status_label.setStyleSheet("color:#b54500; font-weight:700; padding:4px;")
+        try:
+            self.serial.send_line(command)
+        except (OSError, RuntimeError) as exc:
+            self.destructive_stage = None
+            self.destructive_start_index = None
+            QMessageBox.critical(self, "Unable to send command", str(exc))
+            self._update_gate()
+
+    def _block_destructive_sequence(self, message: str) -> None:
+        self.destructive_stage = None
+        self.destructive_start_index = None
+        self.destructive_blocked = True
+        self._append_system(f"STOPPED: {message}")
+        self._update_gate()
+        QMessageBox.critical(self, "Format safety check stopped", message)
 
     def _append_serial(self, text: str) -> None:
         self.transcript += text
@@ -791,16 +839,56 @@ class RecoveryWindow(QMainWindow):
         self._append_serial(f"\n[assistant {stamp}] {message}\n")
 
     def _check_update_outcome(self) -> None:
-        outcome = classify_update_output(self.transcript[-80_000:])
+        if self.destructive_stage is None or self.destructive_start_index is None:
+            return
+        stage_output = self.transcript[self.destructive_start_index :]
+        if self.destructive_stage == "format_help":
+            help_outcome = classify_format_help(stage_output)
+            if help_outcome == FormatHelpOutcome.VERIFIED:
+                self._start_destructive_stage(
+                    "format_run",
+                    FORMAT_COMMAND,
+                    "FORMAT PREFLIGHT PASSED: exact targets are "
+                    + ", ".join(FORMAT_PARTITIONS)
+                    + f"\nSENDING DESTRUCTIVE COMMAND: {FORMAT_COMMAND}",
+                )
+            elif help_outcome in {FormatHelpOutcome.MISMATCH, FormatHelpOutcome.ERROR}:
+                self._block_destructive_sequence(
+                    "U-Boot did not report exactly app_pri, app_sec, cfg_pri, and cfg_sec. "
+                    "The app did not send format or the firmware update."
+                )
+            return
+        if self.destructive_stage == "format_run":
+            format_outcome = classify_format_run(stage_output)
+            if format_outcome == FormatRunOutcome.COMPLETE:
+                self._start_destructive_stage(
+                    "update",
+                    FLASH_COMMAND,
+                    "FORMAT COMPLETE: U-Boot returned to HKVS #\n"
+                    f"SENDING WRITE COMMAND: {FLASH_COMMAND}",
+                )
+            elif format_outcome == FormatRunOutcome.ERROR:
+                self._block_destructive_sequence(
+                    "U-Boot reported a format error. The firmware update was not sent."
+                )
+            return
+
+        outcome = classify_update_output(stage_output)
         if outcome == UpdateOutcome.SHORT_WRITE:
+            self.destructive_stage = None
+            self.destructive_start_index = None
             self.status_label.setText(
                 "STOPPED — known short-write pattern detected; do not power off"
             )
             self.status_label.setStyleSheet("color:#b00020; font-weight:700; padding:4px;")
         elif outcome == UpdateOutcome.NAND_ERROR:
+            self.destructive_stage = None
+            self.destructive_start_index = None
             self.status_label.setText("STOPPED — unexpected NAND error detected")
             self.status_label.setStyleSheet("color:#b00020; font-weight:700; padding:4px;")
         elif outcome == UpdateOutcome.SUCCESS:
+            self.destructive_stage = None
+            self.destructive_start_index = None
             self.status_label.setText(
                 "✓ Update reported completion; verify the camera after reboot"
             )

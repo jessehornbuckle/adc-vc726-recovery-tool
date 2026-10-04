@@ -35,12 +35,22 @@ only `help` and `printenv`. All are read-only.
 
 The built-in server exposes only the already verified firmware under the expected filename. The app must remain connected to both UART and TFTP before enabling the write button.
 
-## Gate 5: deliberate write confirmation
+## Gate 5: deliberate destructive-action confirmation
 
-The user must type `I ACCEPT BRICK RISK` and approve a second confirmation before the app sends `upd digicap.dav`.
+The user must type `I ACCEPT BRICK RISK` and approve a second confirmation before the app
+sends any destructive command.
+
+## Gate 6: exact format preflight
+
+The app first sends the read-only `help format` command. It proceeds only if this U-Boot
+instance advertises exactly `app_pri`, `app_sec`, `cfg_pri`, and `cfg_sec`. It then sends
+`format`, waits for the `HKVS #` prompt to return without a format error, and only then sends
+`upd digicap.dav`. A missing prompt, command error, or different target list stops the sequence
+before the firmware update is sent.
 
 ## Stop conditions
 
 Stop if any identifier differs, serial text is garbled, the firmware digest fails, partition names differ, unexpected NAND errors appear, or reliable power cannot be maintained.
 
-The alpha release detects the known `IElang.tar` short-write failure but does not automatically run `format`. That command is destructive and should remain a separate, evidence-driven recovery action.
+The app detects the known `IElang.tar` short-write failure and stops. A fresh guarded run uses
+the same verified format-before-flash sequence; it never formats an unrecognized target list.

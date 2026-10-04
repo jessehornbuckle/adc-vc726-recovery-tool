@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.9/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.10/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.9).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.10).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.9` supports only this proven combination:
+Version `0.1.0-alpha.10` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -44,11 +44,13 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 - verifies the exact filename, size, and SHA-256 of `digicap.dav`;
 - serves only that verified file through a built-in TFTP server;
 - blocks the write command behind automatic and manual safety gates;
-- requires a typed brick-risk confirmation before sending `upd digicap.dav`;
+- requires a typed brick-risk confirmation before any destructive command;
+- asks U-Boot to describe `format` and requires exactly `app_pri`, `app_sec`, `cfg_pri`,
+  and `cfg_sec` before allowing it to run;
+- waits for formatting to finish and for `HKVS #` to return before sending
+  `upd digicap.dav`;
 - watches output for known success, TFTP, NAND, and short-write patterns;
 - lets the user save a complete serial recovery log.
-
-It intentionally does **not** automate U-Boot's destructive `format` command in the alpha release.
 
 ## What you need
 
@@ -95,8 +97,9 @@ uv run python run_app.py
 9. Click **Start verified TFTP server**. On macOS, approve the administrator prompt so the
    app can temporarily assign `192.168.1.128/24` to the camera-facing network adapter.
 10. Confirm that the built-in TFTP server is listening on UDP port 69.
-11. Review every safety gate, enter the required risk phrase, and send the update command.
-12. Do not interrupt power while NAND is being written.
+11. Review every safety gate and enter the required risk phrase. The app verifies U-Boot's
+    exact four format targets, formats them, waits for `HKVS #`, and only then sends the update.
+12. Do not interrupt power during formatting, transfer, or NAND writing.
 13. After reboot, activate the camera locally at `192.168.1.64` and configure ONVIF/RTSP.
 
 See [Hardware profile](docs/HARDWARE_PROFILE.md) and [Safety model](docs/SAFETY.md) before using the write function.
@@ -111,7 +114,8 @@ See [Hardware profile](docs/HARDWARE_PROFILE.md) and [Safety model](docs/SAFETY.
   Developer ID certificate, notarized by Apple, and checked with Gatekeeper before
   GitHub Actions publishes the downloadable artifact.
 - The automatic success detector is advisory; the serial log remains the source of truth.
-- The known short-write repair is documented but not automated.
+- The guarded format-before-flash sequence is limited to the exact U-Boot command description
+  proven on the supported ADC-VC726 hardware.
 
 ## Development
 
