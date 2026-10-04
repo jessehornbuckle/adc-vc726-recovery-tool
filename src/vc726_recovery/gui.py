@@ -102,6 +102,82 @@ def bundled_asset_path(filename: str) -> Path:
     return Path(__file__).with_name("assets") / filename
 
 
+class PinoutImageView(QScrollArea):
+    """Show a complete reference photo by default, with optional full-size scrolling."""
+
+    def __init__(self, filename: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setWidgetResizable(True)
+
+        self.image_label = QLabel()
+        self.image_label.setObjectName(filename)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setWidget(self.image_label)
+
+        self.source_pixmap = QPixmap(str(bundled_asset_path(filename)))
+        self.fit_to_window = True
+        if self.source_pixmap.isNull():
+            self.image_label.setText(f"Reference image is missing: {filename}")
+            self.image_label.setStyleSheet("color:#b00020; padding:20px;")
+        else:
+            self._refresh_pixmap()
+
+    def set_fit_to_window(self, enabled: bool) -> None:
+        self.fit_to_window = enabled
+        self.setWidgetResizable(enabled)
+        self._refresh_pixmap()
+
+    def _refresh_pixmap(self) -> None:
+        if self.source_pixmap.isNull():
+            return
+        if self.fit_to_window:
+            available = self.viewport().size()
+            available.setWidth(max(1, available.width() - 4))
+            available.setHeight(max(1, available.height() - 4))
+            displayed = self.source_pixmap.scaled(
+                available,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            self.image_label.setPixmap(displayed)
+        else:
+            self.image_label.setPixmap(self.source_pixmap)
+            self.image_label.adjustSize()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        super().resizeEvent(event)
+        if self.fit_to_window:
+            self._refresh_pixmap()
+
+
+class PinoutImagePage(QWidget):
+    def __init__(self, filename: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        controls = QHBoxLayout()
+        self.view_note = QLabel("The complete photo is fitted below.")
+        controls.addWidget(self.view_note)
+        controls.addStretch(1)
+        self.size_button = QPushButton("Show actual size (scroll)")
+        self.size_button.clicked.connect(self._toggle_size)
+        controls.addWidget(self.size_button)
+        layout.addLayout(controls)
+
+        self.image_view = PinoutImageView(filename)
+        layout.addWidget(self.image_view, 1)
+
+    def _toggle_size(self) -> None:
+        fit = not self.image_view.fit_to_window
+        self.image_view.set_fit_to_window(fit)
+        if fit:
+            self.view_note.setText("The complete photo is fitted below.")
+            self.size_button.setText("Show actual size (scroll)")
+        else:
+            self.view_note.setText("Actual-size photo; scroll to inspect details.")
+            self.size_button.setText("Fit whole photo")
+
+
 class UartPinoutDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -143,24 +219,8 @@ class UartPinoutDialog(QDialog):
         layout.addWidget(buttons)
 
     @staticmethod
-    def _image_page(filename: str) -> QScrollArea:
-        scroll = QScrollArea()
-        scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        image_label = QLabel()
-        image_label.setObjectName(filename)
-        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pixmap = QPixmap(str(bundled_asset_path(filename)))
-        if pixmap.isNull():
-            image_label.setText(f"Reference image is missing: {filename}")
-            image_label.setStyleSheet("color:#b00020; padding:20px;")
-        else:
-            image_label.setPixmap(
-                pixmap.scaledToWidth(880, Qt.TransformationMode.SmoothTransformation)
-            )
-        image_label.adjustSize()
-        scroll.setWidget(image_label)
-        scroll.setWidgetResizable(False)
-        return scroll
+    def _image_page(filename: str) -> PinoutImagePage:
+        return PinoutImagePage(filename)
 
 
 class RecoveryWindow(QMainWindow):

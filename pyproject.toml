@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vc726-recovery"
-version = "0.1.1a7"
+version = "0.1.1a8"
 description = "Guarded desktop recovery assistant for the Alarm.com ADC-VC726 camera"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"

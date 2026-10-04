@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
+from PySide6.QtWidgets import QApplication
 
 import vc726_recovery.gui as gui
 from vc726_recovery.constants import RECOVERED_CAMERA_URL
@@ -33,22 +33,54 @@ def test_application_icon_asset_is_bundled_and_readable():
 
 
 def test_uart_pinout_dialog_shows_mapping_and_both_photos():
-    _app()
+    app = _app()
     dialog = gui.UartPinoutDialog()
     try:
+        dialog.show()
+        app.processEvents()
         assert "Camera TXD → Adapter RXD" in dialog.mapping_label.text()
         assert "Camera RXD → Adapter TXD" in dialog.mapping_label.text()
         assert "DO NOT CONNECT" in dialog.mapping_label.text()
         assert dialog.pinout_tabs.count() == 2
         for index in range(dialog.pinout_tabs.count()):
             page = dialog.pinout_tabs.widget(index)
-            assert isinstance(page, QScrollArea)
-            image = page.widget()
-            assert isinstance(image, QLabel)
-            assert image.pixmap() is not None
-            assert not image.pixmap().isNull()
+            assert isinstance(page, gui.PinoutImagePage)
+            displayed = page.image_view.image_label.pixmap()
+            viewport = page.image_view.viewport().size()
+            assert displayed is not None
+            assert not displayed.isNull()
+            assert displayed.width() <= viewport.width()
+            assert displayed.height() <= viewport.height()
+            assert page.image_view.fit_to_window
     finally:
         dialog.close()
+
+
+def test_uart_pinout_photo_can_toggle_between_fitted_and_actual_size():
+    app = _app()
+    page = gui.PinoutImagePage("usb-ttl-adapter-pinout.jpg")
+    try:
+        page.resize(900, 600)
+        page.show()
+        app.processEvents()
+        assert page.image_view.fit_to_window
+
+        page.size_button.click()
+        app.processEvents()
+        displayed = page.image_view.image_label.pixmap()
+        assert not page.image_view.fit_to_window
+        assert displayed.size() == page.image_view.source_pixmap.size()
+        assert page.size_button.text() == "Fit whole photo"
+
+        page.size_button.click()
+        app.processEvents()
+        displayed = page.image_view.image_label.pixmap()
+        viewport = page.image_view.viewport().size()
+        assert page.image_view.fit_to_window
+        assert displayed.width() <= viewport.width()
+        assert displayed.height() <= viewport.height()
+    finally:
+        page.close()
 
 
 def test_uart_pinout_button_opens_reference_dialog(monkeypatch):
