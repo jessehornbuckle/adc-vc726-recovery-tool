@@ -55,7 +55,7 @@ def main() -> int:
         "status": "starting",
         "sequence": 0,
         "done": 0,
-        "total": args.file.stat().st_size,
+        "total": 0,
         "message": "Preparing temporary network address",
     }
     added_address = False
@@ -77,6 +77,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
 
     try:
+        state["total"] = args.file.stat().st_size
         firmware = verify_firmware(args.file)
         if not firmware.valid:
             raise RuntimeError(f"Firmware verification failed in helper: {firmware.summary}")

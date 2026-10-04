@@ -54,6 +54,7 @@ class PrivilegedMacTftpServer:
         self._directory: Path | None = None
         self._state_path: Path | None = None
         self._stop_path: Path | None = None
+        self._log_path: Path | None = None
         self._running = False
         self._monitor: threading.Thread | None = None
 
@@ -68,6 +69,13 @@ class PrivilegedMacTftpServer:
         self._directory = Path(tempfile.mkdtemp(prefix="vc726-tftp-"))
         self._state_path = self._directory / "state.json"
         self._stop_path = self._directory / "stop"
+        self._log_path = self._directory / "helper.log"
+        staged_firmware = self._directory / "digicap.dav"
+        # The administrator-owned helper may not have macOS privacy access to a file
+        # selected from Downloads/Documents even though the GUI does. Stage the already
+        # verified image in our private working directory before elevating.
+        shutil.copyfile(self.file_path, staged_firmware)
+        staged_firmware.chmod(0o644)
         command = [
             *_helper_path(),
             "--host",
@@ -77,7 +85,7 @@ class PrivilegedMacTftpServer:
             "--interface",
             interface,
             "--file",
-            str(self.file_path),
+            str(staged_firmware),
             "--state",
             str(self._state_path),
             "--stop",
@@ -86,7 +94,7 @@ class PrivilegedMacTftpServer:
             str(os.getpid()),
         ]
         shell_command = "/usr/bin/nohup " + " ".join(shlex.quote(part) for part in command)
-        shell_command += " >/dev/null 2>&1 &"
+        shell_command += f" >{shlex.quote(str(self._log_path))} 2>&1 &"
         result = subprocess.run(
             ["/usr/bin/osascript", "-e", _apple_script(shell_command)],
             capture_output=True,
@@ -109,8 +117,9 @@ class PrivilegedMacTftpServer:
         if state.get("status") != "running":
             if self._stop_path:
                 self._stop_path.touch(exist_ok=True)
+            detail = self._startup_detail(state)
             self._discard_directory()
-            raise NetworkSetupError(str(state.get("message") or "TFTP helper did not start"))
+            raise NetworkSetupError(detail)
         self._running = True
         self.log(str(state.get("message") or f"TFTP listening on {self.host}:{self.port}"))
         self._monitor = threading.Thread(target=self._monitor_state, daemon=True)
@@ -151,9 +160,23 @@ class PrivilegedMacTftpServer:
                 return
             time.sleep(0.2)
 
+    def _startup_detail(self, state: dict[str, object]) -> str:
+        message = str(state.get("message") or "").strip()
+        if message:
+            return message
+        if self._log_path:
+            try:
+                output = self._log_path.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                output = ""
+            if output:
+                return f"TFTP helper failed to launch: {output[-1200:]}"
+        return "TFTP helper did not start and produced no diagnostic output"
+
     def _discard_directory(self) -> None:
         if self._directory:
             shutil.rmtree(self._directory, ignore_errors=True)
         self._directory = None
         self._state_path = None
         self._stop_path = None
+        self._log_path = None

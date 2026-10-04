@@ -40,4 +40,17 @@ def test_privileged_server_uses_one_macos_admin_command(monkeypatch, tmp_path):
     assert "'/Applications/Test Helper'" in script
     assert "--interface en5" in script
     assert "--host 192.168.1.128" in script
+    assert f"--file {work / 'digicap.dav'}" in script
+    assert f">{work / 'helper.log'}" in script
+    assert (work / "digicap.dav").read_bytes() == b"placeholder"
     server.stop()
+
+
+def test_startup_detail_uses_helper_log(tmp_path):
+    server = PrivilegedMacTftpServer(
+        "192.168.1.128", 69, tmp_path / "digicap.dav", "192.168.1.66"
+    )
+    server._log_path = tmp_path / "helper.log"
+    server._log_path.write_text("launch failure detail", encoding="utf-8")
+
+    assert server._startup_detail({}) == "TFTP helper failed to launch: launch failure detail"
