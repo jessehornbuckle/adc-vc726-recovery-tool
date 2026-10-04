@@ -120,3 +120,18 @@ def test_update_outcome_prefers_short_write_over_generic_failure():
     )
     assert classify_update_output("TFTP error: file not found") == UpdateOutcome.TFTP_ERROR
     assert classify_update_output("Update success; rebooting") == UpdateOutcome.SUCCESS
+
+
+def test_update_outcome_recognizes_real_hikvision_success_markers():
+    transcript = """
+    [ INFO][MIN]BURN: Write Flash [OK]
+    ***** UPDATE COMPLETE *****
+    ***** SYSTEM REBOOT *****
+    """
+
+    assert classify_update_output(transcript) == UpdateOutcome.SUCCESS
+
+
+def test_update_outcome_requires_both_hikvision_success_markers():
+    assert classify_update_output("Write Flash [OK]") == UpdateOutcome.UNKNOWN
+    assert classify_update_output("UPDATE COMPLETE") == UpdateOutcome.UNKNOWN

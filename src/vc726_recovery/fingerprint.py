@@ -144,6 +144,8 @@ def classify_update_output(transcript: str) -> UpdateOutcome:
         return UpdateOutcome.NAND_ERROR
     if any(marker in text for marker in ("tftp error", "retry count exceeded", "file not found")):
         return UpdateOutcome.TFTP_ERROR
+    if "write flash [ok]" in text and "update complete" in text:
+        return UpdateOutcome.SUCCESS
     if any(
         marker in text
         for marker in (

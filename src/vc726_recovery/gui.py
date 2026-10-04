@@ -124,6 +124,7 @@ class RecoveryWindow(QMainWindow):
         self.destructive_stage: str | None = None
         self.destructive_start_index: int | None = None
         self.destructive_blocked = False
+        self.flash_succeeded = False
 
         self._build_ui()
         self._refresh_ports()
@@ -741,7 +742,15 @@ class RecoveryWindow(QMainWindow):
             return
         gate = self._gate()
         self.flash_button.setEnabled(gate.ready and not self.destructive_blocked)
-        if self.destructive_blocked:
+        if self.flash_succeeded:
+            self.flash_button.setEnabled(False)
+            self.status_label.setText("✓ FLASH SUCCESSFUL — camera rebooting into Hikvision")
+            self.status_label.setStyleSheet("color:#187a2f; font-weight:700; padding:4px;")
+            self.blockers_label.setText(
+                "Firmware writing completed successfully. Let the camera finish its first "
+                "boot before disconnecting power."
+            )
+        elif self.destructive_blocked:
             self.status_label.setText("STOPPED — destructive sequence halted")
             self.status_label.setStyleSheet("color:#b00020; font-weight:700; padding:4px;")
             self.blockers_label.setText(
@@ -997,10 +1006,23 @@ class RecoveryWindow(QMainWindow):
         elif outcome == UpdateOutcome.SUCCESS:
             self.destructive_stage = None
             self.destructive_start_index = None
-            self.status_label.setText(
-                "✓ Update reported completion; verify the camera after reboot"
+            self.flash_succeeded = True
+            self._append_system(
+                "FLASH SUCCESSFUL: Write Flash [OK] and UPDATE COMPLETE confirmed"
             )
-            self.status_label.setStyleSheet("color:#187a2f; font-weight:700; padding:4px;")
+            self.workflow_status.setText(
+                "Firmware was written successfully. The camera is rebooting into stock "
+                "Hikvision firmware; allow the first boot to finish."
+            )
+            self._update_gate()
+            self.tabs.setCurrentIndex(2)
+            QMessageBox.information(
+                self,
+                "Flash successful",
+                "The camera reported Write Flash [OK] and UPDATE COMPLETE, then began its "
+                "automatic reboot.\n\nKeep PoE connected while the first Hikvision boot "
+                "finishes. TFTP is no longer needed after the reboot.",
+            )
 
     def _save_log_as(self) -> None:
         suggested = f"ADC-VC726-recovery-{datetime.now():%Y%m%d-%H%M%S}.log"
