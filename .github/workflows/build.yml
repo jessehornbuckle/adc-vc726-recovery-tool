@@ -89,6 +89,7 @@ jobs:
             --clean \
             --windowed \
             --name ADC-VC726-Recovery \
+            --icon packaging/app-icon.icns \
             --osx-bundle-identifier com.jessehornbuckle.adc-vc726-recovery \
             --codesign-identity "$SIGNING_IDENTITY" \
             --add-binary "helper-dist/vc726-tftp-helper:." \
@@ -119,6 +120,7 @@ jobs:
           --clean
           --windowed
           --name ADC-VC726-Recovery
+          --icon packaging/app-icon.ico
           --add-data "src/vc726_recovery/assets:vc726_recovery/assets"
           run_app.py
       - name: Smoke-test packaged macOS app

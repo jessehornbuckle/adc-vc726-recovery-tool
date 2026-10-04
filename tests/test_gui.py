@@ -2,7 +2,7 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QScrollArea
 
 import vc726_recovery.gui as gui
@@ -23,6 +23,13 @@ def test_uart_pinout_assets_are_bundled_and_readable():
         path = gui.bundled_asset_path(filename)
         assert path.is_file()
         assert not QPixmap(str(path)).isNull()
+
+
+def test_application_icon_asset_is_bundled_and_readable():
+    _app()
+    path = gui.bundled_asset_path("app-icon.png")
+    assert path.is_file()
+    assert not QIcon(str(path)).isNull()
 
 
 def test_uart_pinout_dialog_shows_mapping_and_both_photos():

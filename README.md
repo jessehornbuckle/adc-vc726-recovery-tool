@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.1-alpha.6/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.1-alpha.7/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.1-alpha.6).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.1-alpha.7).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.1-alpha.6` supports only this proven combination:
+Version `0.1.1-alpha.7` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -33,6 +33,7 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 
 ## What the app does
 
+- uses a dedicated camera-lens and recovery-arrow application icon on macOS and Windows;
 - detects USB serial adapters;
 - opens the UART at 115200 8-N-1;
 - includes in-app camera-connector and USB-to-TTL adapter photos with the exact safe wiring
