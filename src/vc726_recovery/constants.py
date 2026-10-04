@@ -1,7 +1,7 @@
 """Known-good values from the verified ADC-VC726 recovery."""
 
 APP_NAME = "ADC-VC726 Recovery Assistant"
-APP_VERSION = "0.1.0-alpha.10"
+APP_VERSION = "0.1.1-alpha.1"
 
 EXPECTED_MODEL = "ADC-VC726"
 EXPECTED_BOARD = "PCB-131948 REV 2.0"
