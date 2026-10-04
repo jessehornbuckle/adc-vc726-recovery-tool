@@ -2,6 +2,12 @@
 
 A guarded Windows/macOS desktop utility for converting a **verified Alarm.com ADC-VC726** camera to local Hikvision firmware through its internal 3.3 V UART bootloader.
 
+## Download
+
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.2/ADC-VC726-Recovery-macOS-arm64.zip)**
+
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.2).
+
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
 > [!CAUTION]
