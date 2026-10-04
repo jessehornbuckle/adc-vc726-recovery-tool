@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.6/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.7/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.6).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.7).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.6` supports only this proven combination:
+Version `0.1.0-alpha.7` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -92,8 +92,9 @@ uv run python run_app.py
    is not a manual race.
 8. At `HKVS #`, click **3. Verify read-only fingerprint**. The app combines the saved
    hardware evidence with live U-Boot settings and requires their MAC addresses to match.
-9. Assign the computer's isolated Ethernet adapter `192.168.1.128/24`.
-10. Start the built-in TFTP server on UDP port 69.
+9. Click **Start verified TFTP server**. On macOS, approve the administrator prompt so the
+   app can temporarily assign `192.168.1.128/24` to the camera-facing network adapter.
+10. Confirm that the built-in TFTP server is listening on UDP port 69.
 11. Review every safety gate, enter the required risk phrase, and send the update command.
 12. Do not interrupt power while NAND is being written.
 13. After reboot, activate the camera locally at `192.168.1.64` and configure ONVIF/RTSP.
@@ -102,8 +103,10 @@ See [Hardware profile](docs/HARDWARE_PROFILE.md) and [Safety model](docs/SAFETY.
 
 ## Current alpha limitations
 
-- Network settings are checked by binding the required IP but are not changed automatically.
-- Binding UDP port 69 can require administrator rights on macOS/Linux.
+- Automatic temporary network setup is currently implemented on macOS. Other platforms
+  still require the host address to be assigned manually.
+- macOS displays one administrator prompt when the button configures the temporary address
+  and starts the narrow TFTP helper on UDP port 69.
 - Windows builds are currently unsigned. macOS builds are signed with an Apple
   Developer ID certificate, notarized by Apple, and checked with Gatekeeper before
   GitHub Actions publishes the downloadable artifact.

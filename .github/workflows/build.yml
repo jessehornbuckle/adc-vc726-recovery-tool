@@ -78,10 +78,20 @@ jobs:
           python -m PyInstaller \
             --noconfirm \
             --clean \
+            --onefile \
+            --name vc726-tftp-helper \
+            --distpath helper-dist \
+            --codesign-identity "$SIGNING_IDENTITY" \
+            tftp_helper_entry.py
+
+          python -m PyInstaller \
+            --noconfirm \
+            --clean \
             --windowed \
             --name ADC-VC726-Recovery \
             --osx-bundle-identifier com.jessehornbuckle.adc-vc726-recovery \
             --codesign-identity "$SIGNING_IDENTITY" \
+            --add-binary "helper-dist/vc726-tftp-helper:." \
             run_app.py
 
           app_version="$(python -c 'from importlib.metadata import version; from packaging.version import Version; print(Version(version("vc726-recovery")).base_version)')"

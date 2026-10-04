@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +60,8 @@ from .fingerprint import (
     find_protected_shell_prompt,
 )
 from .firmware import FirmwareReport, verify_firmware
+from .network import NetworkSetupError
+from .privileged_tftp import PrivilegedMacTftpServer
 from .safety import ManualConfirmations, SafetyGate
 from .serial_console import SerialConsole, available_ports
 from .tftp import SingleFileTftpServer
@@ -94,7 +97,7 @@ class RecoveryWindow(QMainWindow):
             self.bridge.serial_error.emit,
             self.bridge.serial_closed.emit,
         )
-        self.tftp: SingleFileTftpServer | None = None
+        self.tftp: SingleFileTftpServer | PrivilegedMacTftpServer | None = None
         self.firmware: FirmwareReport | None = None
         self.fingerprint: FingerprintReport | None = None
         self.transcript = ""
@@ -302,10 +305,9 @@ class RecoveryWindow(QMainWindow):
         layout.addWidget(server_group)
 
         network_note = QLabel(
-            "Assign the selected Ethernet adapter 192.168.1.128/24 before starting TFTP. "
-            "The app checks the bind but does not alter system network settings in this "
-            "alpha release. "
-            "UDP port 69 may require administrator rights on macOS/Linux."
+            "On macOS, Start automatically finds the camera-facing network adapter and "
+            "temporarily assigns 192.168.1.128/24. macOS will ask for an administrator "
+            "password. The app removes the temporary address when TFTP stops."
         )
         network_note.setWordWrap(True)
         layout.addWidget(network_note)
@@ -629,13 +631,16 @@ class RecoveryWindow(QMainWindow):
         self._update_gate()
 
     def _toggle_tftp(self) -> None:
-        if self.tftp and self.tftp.running:
+        if self.tftp:
+            if self.tftp.running:
+                self.tftp.stop()
+                self.tftp = None
+                self.tftp_button.setText("Start verified TFTP server")
+                self.tftp_status.setText("Stopped")
+                self._update_gate()
+                return
             self.tftp.stop()
             self.tftp = None
-            self.tftp_button.setText("Start verified TFTP server")
-            self.tftp_status.setText("Stopped")
-            self._update_gate()
-            return
         if not self.firmware or not self.firmware.valid:
             QMessageBox.warning(
                 self, "Firmware not verified", "Verify the exact firmware image first."
@@ -647,21 +652,33 @@ class RecoveryWindow(QMainWindow):
         except OSError:
             QMessageBox.warning(self, "Invalid address", "Enter a valid IPv4 address.")
             return
-        server = SingleFileTftpServer(
-            host,
-            TFTP_PORT,
-            self.firmware.path,
-            progress=self.bridge.tftp_progress.emit,
-            log=self.bridge.tftp_log.emit,
-        )
+        if sys.platform == "darwin":
+            server = PrivilegedMacTftpServer(
+                host,
+                TFTP_PORT,
+                self.firmware.path,
+                self.camera_ip.text().strip(),
+                progress=self.bridge.tftp_progress.emit,
+                log=self.bridge.tftp_log.emit,
+            )
+        else:
+            server = SingleFileTftpServer(
+                host,
+                TFTP_PORT,
+                self.firmware.path,
+                progress=self.bridge.tftp_progress.emit,
+                log=self.bridge.tftp_log.emit,
+            )
         try:
             server.start()
+        except NetworkSetupError as exc:
+            QMessageBox.critical(self, "Network setup failed", str(exc))
+            return
         except PermissionError:
             QMessageBox.critical(
                 self,
                 "Port 69 requires permission",
-                "The operating system denied UDP port 69. On macOS/Linux, launch the packaged "
-                "TFTP helper with administrator rights. This alpha build does not elevate itself.",
+                "The operating system denied UDP port 69. No TFTP server was left running.",
             )
             return
         except OSError as exc:
