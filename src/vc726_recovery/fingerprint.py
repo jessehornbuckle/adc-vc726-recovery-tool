@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .constants import SUPPORTED_CAMERA_IPS
+from .constants import HARDWARE_PROFILE_BEGIN, HARDWARE_PROFILE_END, SUPPORTED_CAMERA_IPS
 
 
 class UpdateOutcome(str, Enum):
@@ -26,16 +26,36 @@ class FingerprintReport:
     sensor: bool
     camera_ip: bool
     server_ip: bool
+    profile_captured: bool
+    mac_match: bool
     evidence: dict[str, str] = field(default_factory=dict)
 
     @property
     def readonly_gate_passed(self) -> bool:
         """Values that can be safely established from serial output."""
-        return self.prompt and self.camera_ip and self.server_ip and (self.soc or self.nand)
+        return (
+            self.profile_captured
+            and self.prompt
+            and self.camera_ip
+            and self.server_ip
+            and self.mac_match
+            and (self.soc or self.nand)
+        )
 
     @property
     def matched_count(self) -> int:
-        return sum((self.prompt, self.soc, self.nand, self.sensor, self.camera_ip, self.server_ip))
+        return sum(
+            (
+                self.profile_captured,
+                self.prompt,
+                self.soc,
+                self.nand,
+                self.sensor,
+                self.camera_ip,
+                self.server_ip,
+                self.mac_match,
+            )
+        )
 
 
 class FingerprintAnalyzer:
@@ -57,16 +77,48 @@ class FingerprintAnalyzer:
         "server_ip": re.compile(r"serverip\s*=\s*192\.168\.1\.128", re.IGNORECASE),
     }
 
+    _hardware_mac = re.compile(r"MAC Address\[([0-9a-f:]{17})\]", re.IGNORECASE)
+    _bootloader_mac = re.compile(r"ethaddr\s*=\s*([0-9a-f:]{17})", re.IGNORECASE)
+    _profile_begin = re.compile(
+        rf"(?:^|[\r\n]){re.escape(HARDWARE_PROFILE_BEGIN)}(?:[\r\n]|$)"
+    )
+    _profile_end = re.compile(
+        rf"(?:^|[\r\n]){re.escape(HARDWARE_PROFILE_END)}(?:[\r\n]|$)"
+    )
+
     @classmethod
-    def analyze(cls, transcript: str) -> FingerprintReport:
+    def analyze(cls, transcript: str, hardware_profile: str = "") -> FingerprintReport:
         found: dict[str, bool] = {}
         evidence: dict[str, str] = {}
         for name, pattern in cls._patterns.items():
-            match = pattern.search(transcript)
+            source = hardware_profile if name in {"soc", "nand", "sensor"} else transcript
+            match = pattern.search(source)
             found[name] = match is not None
             if match:
                 evidence[name] = " ".join(match.group(0).split())[:160]
-        return FingerprintReport(evidence=evidence, **found)
+
+        profile_captured = bool(
+            cls._profile_begin.search(hardware_profile)
+            and cls._profile_end.search(hardware_profile)
+        )
+        hardware_mac = cls._hardware_mac.search(hardware_profile)
+        bootloader_mac = cls._bootloader_mac.search(transcript)
+        mac_match = bool(
+            hardware_mac
+            and bootloader_mac
+            and hardware_mac.group(1).casefold() == bootloader_mac.group(1).casefold()
+        )
+        if hardware_mac:
+            evidence["hardware_mac"] = hardware_mac.group(1).lower()
+        if bootloader_mac:
+            evidence["bootloader_mac"] = bootloader_mac.group(1).lower()
+
+        return FingerprintReport(
+            profile_captured=profile_captured,
+            mac_match=mac_match,
+            evidence=evidence,
+            **found,
+        )
 
 
 def classify_update_output(transcript: str) -> UpdateOutcome:

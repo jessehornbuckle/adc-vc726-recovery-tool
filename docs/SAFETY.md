@@ -20,12 +20,15 @@ A renamed or modified file cannot pass.
 
 Before any write command, the app requires:
 
+- a complete, automatically saved Linux hardware profile bounded by capture markers;
+- evidence of the expected Ambarella S3L or Micron NAND platform in that profile;
 - the `HKVS #` prompt;
 - one of the explicitly proven per-camera bootloader addresses (`192.168.1.65` or
   `192.168.1.66`) and the expected TFTP-server address (`192.168.1.128`);
-- evidence of the expected Ambarella S3L or Micron NAND platform.
+- the MAC address captured from Linux to exactly match U-Boot's live `ethaddr`.
 
-The probe sends only `help` and `printenv`.
+Step 1 sends only `echo` boundary markers, `dmesg`, `cat /proc/mtd`, and
+`cat /proc/cpuinfo`. Step 3 sends only `help` and `printenv`. All are read-only.
 
 ## Gate 4: controlled transfer
 

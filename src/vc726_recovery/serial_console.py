@@ -9,7 +9,12 @@ from collections.abc import Callable
 import serial
 from serial.tools import list_ports
 
-from .constants import BOOT_INTERRUPT, SERIAL_BAUDRATE
+from .constants import (
+    BOOT_INTERRUPT,
+    HARDWARE_PROFILE_BEGIN,
+    HARDWARE_PROFILE_END,
+    SERIAL_BAUDRATE,
+)
 
 
 def available_ports() -> list[tuple[str, str]]:
@@ -114,6 +119,19 @@ class SerialConsole:
         self.send_line("help")
         time.sleep(0.25)
         self.send_line("printenv")
+
+    def capture_hardware_profile(self) -> None:
+        """Capture bounded, read-only Linux hardware evidence from the camera."""
+        commands = (
+            f"echo {HARDWARE_PROFILE_BEGIN}",
+            "dmesg",
+            "cat /proc/mtd",
+            "cat /proc/cpuinfo",
+            f"echo {HARDWARE_PROFILE_END}",
+        )
+        for command in commands:
+            self.send_line(command)
+            time.sleep(0.1)
 
     def _read_loop(self) -> None:
         decoder_buffer = b""

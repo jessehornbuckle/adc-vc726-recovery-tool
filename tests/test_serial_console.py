@@ -1,4 +1,4 @@
-from vc726_recovery.constants import BOOT_INTERRUPT
+from vc726_recovery.constants import BOOT_INTERRUPT, HARDWARE_PROFILE_BEGIN, HARDWARE_PROFILE_END
 from vc726_recovery.serial_console import SerialConsole
 
 
@@ -41,3 +41,19 @@ def test_interrupt_stops_after_prompt_is_observed_across_chunks():
     console.interrupt_boot()
 
     assert fake.writes == [BOOT_INTERRUPT]
+
+
+def test_hardware_capture_sends_only_bounded_readonly_commands():
+    console = SerialConsole(lambda _text: None, lambda _error: None)
+    fake = FakeSerial()
+    console._serial = fake
+
+    console.capture_hardware_profile()
+
+    assert fake.writes == [
+        f"echo {HARDWARE_PROFILE_BEGIN}\r\n".encode(),
+        b"dmesg\r\n",
+        b"cat /proc/mtd\r\n",
+        b"cat /proc/cpuinfo\r\n",
+        f"echo {HARDWARE_PROFILE_END}\r\n".encode(),
+    ]

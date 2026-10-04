@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.3/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.4/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.3).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.4).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.3` supports only this proven combination:
+Version `0.1.0-alpha.4` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -35,8 +35,12 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 
 - detects USB serial adapters;
 - opens the UART at 115200 8-N-1;
+- captures `dmesg`, `/proc/mtd`, and `/proc/cpuinfo` from the running camera using
+  read-only commands and automatically saves the bounded hardware evidence;
+- guides the user through a 10-second PoE power-off wait;
 - repeatedly sends `Ctrl+U` during the short U-Boot countdown;
 - runs only `help` and `printenv` during the read-only fingerprint check;
+- requires the saved Linux profile MAC to match U-Boot's live `ethaddr`;
 - verifies the exact filename, size, and SHA-256 of `digicap.dav`;
 - serves only that verified file through a built-in TFTP server;
 - blocks the write command behind automatic and manual safety gates;
@@ -78,13 +82,21 @@ uv run python run_app.py
 1. Open the camera with PoE disconnected and physically verify every hardware identifier.
 2. Connect only UART ground, TX, and RX. Leave both supply pins disconnected.
 3. Select `digicap.dav` and let the app verify its exact hash and size.
-4. Connect the UART, start the 12-second `Ctrl+U` interrupt window, then apply PoE.
-5. At the `HKVS #` prompt, run the app's read-only fingerprint check.
-6. Assign the computer's isolated Ethernet adapter `192.168.1.128/24`.
-7. Start the built-in TFTP server on UDP port 69.
-8. Review every safety gate, enter the required risk phrase, and send the update command.
-9. Do not interrupt power while NAND is being written.
-10. After reboot, activate the camera locally at `192.168.1.64` and configure ONVIF/RTSP.
+4. Connect the UART and let the camera finish a normal boot to its Linux `#` prompt.
+5. Click **1. Capture and save hardware profile**. The app runs only read-only Linux
+   commands and saves the result under `Documents/ADC-VC726 Recovery Logs`.
+6. When prompted, unplug Ethernet/PoE and confirm. Keep it unplugged during the app's
+   10-second power-off countdown.
+7. Click **2. Start Ctrl+U boot-interrupt window**, then reconnect Ethernet/PoE when the
+   button tells you. The app transmits Ctrl+U before power-up so the two-second countdown
+   is not a manual race.
+8. At `HKVS #`, click **3. Verify read-only fingerprint**. The app combines the saved
+   hardware evidence with live U-Boot settings and requires their MAC addresses to match.
+9. Assign the computer's isolated Ethernet adapter `192.168.1.128/24`.
+10. Start the built-in TFTP server on UDP port 69.
+11. Review every safety gate, enter the required risk phrase, and send the update command.
+12. Do not interrupt power while NAND is being written.
+13. After reboot, activate the camera locally at `192.168.1.64` and configure ONVIF/RTSP.
 
 See [Hardware profile](docs/HARDWARE_PROFILE.md) and [Safety model](docs/SAFETY.md) before using the write function.
 

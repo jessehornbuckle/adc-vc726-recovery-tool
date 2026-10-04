@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import socket
 import threading
 from datetime import datetime
@@ -44,6 +45,7 @@ from .constants import (
     EXPECTED_SOC,
     FIRMWARE_SOURCE_URL,
     FLASH_COMMAND,
+    HARDWARE_PROFILE_END,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
     SUPPORTED_CAMERA_IPS,
@@ -96,6 +98,12 @@ class RecoveryWindow(QMainWindow):
         self.fingerprint: FingerprintReport | None = None
         self.transcript = ""
         self.log_path: Path | None = None
+        self.hardware_profile = ""
+        self.hardware_profile_path: Path | None = None
+        self.capture_start_index: int | None = None
+        self.bootloader_start_index: int | None = None
+        self.power_cycle_seconds = 0
+        self.power_cycle_ready = False
 
         self._build_ui()
         self._refresh_ports()
@@ -105,6 +113,14 @@ class RecoveryWindow(QMainWindow):
         self.outcome_timer.setInterval(1000)
         self.outcome_timer.timeout.connect(self._check_update_outcome)
         self.outcome_timer.start()
+
+        self.capture_timer = QTimer(self)
+        self.capture_timer.setInterval(200)
+        self.capture_timer.timeout.connect(self._check_hardware_capture)
+
+        self.power_cycle_timer = QTimer(self)
+        self.power_cycle_timer.setInterval(1000)
+        self.power_cycle_timer.timeout.connect(self._power_cycle_tick)
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -223,18 +239,30 @@ class RecoveryWindow(QMainWindow):
         cable_warning.setStyleSheet("color:#b54500; font-weight:600;")
         layout.addWidget(cable_warning)
 
-        controls = QHBoxLayout()
-        self.interrupt_button = QPushButton("Start Ctrl+U boot-interrupt window")
+        controls = QGridLayout()
+        self.capture_button = QPushButton("1. Capture and save hardware profile")
+        self.capture_button.clicked.connect(self._capture_hardware_profile)
+        self.capture_button.setEnabled(False)
+        self.interrupt_button = QPushButton("2. Start Ctrl+U boot-interrupt window")
         self.interrupt_button.clicked.connect(self._interrupt_boot)
-        self.probe_button = QPushButton("Run read-only fingerprint check")
+        self.interrupt_button.setEnabled(False)
+        self.probe_button = QPushButton("3. Verify read-only fingerprint")
         self.probe_button.clicked.connect(self._run_probe)
+        self.probe_button.setEnabled(False)
         save_log = QPushButton("Save log…")
         save_log.clicked.connect(self._save_log_as)
-        controls.addWidget(self.interrupt_button)
-        controls.addWidget(self.probe_button)
-        controls.addStretch()
-        controls.addWidget(save_log)
+        controls.addWidget(self.capture_button, 0, 0)
+        controls.addWidget(self.interrupt_button, 0, 1)
+        controls.addWidget(self.probe_button, 0, 2)
+        controls.addWidget(save_log, 0, 3)
         layout.addLayout(controls)
+
+        self.workflow_status = QLabel(
+            "Step 1: Let the camera boot normally, then capture its hardware profile."
+        )
+        self.workflow_status.setWordWrap(True)
+        self.workflow_status.setStyleSheet("font-weight:600;")
+        layout.addWidget(self.workflow_status)
 
         self.fingerprint_status = QLabel("No bootloader fingerprint collected")
         self.fingerprint_status.setWordWrap(True)
@@ -368,11 +396,16 @@ class RecoveryWindow(QMainWindow):
             QMessageBox.critical(self, "Serial connection failed", str(exc))
             return
         self.connect_button.setText("Disconnect")
+        self.capture_button.setEnabled(True)
         self._append_system(f"Connected to {port} at {SERIAL_BAUDRATE} 8-N-1")
         self._update_gate()
 
     def _serial_closed(self) -> None:
         self.connect_button.setText("Connect")
+        if hasattr(self, "capture_button"):
+            self.capture_button.setEnabled(False)
+            self.interrupt_button.setEnabled(False)
+            self.probe_button.setEnabled(False)
         self._update_gate()
 
     def _serial_error(self, message: str) -> None:
@@ -385,7 +418,11 @@ class RecoveryWindow(QMainWindow):
             QMessageBox.warning(self, "Serial disconnected", "Connect the serial console first.")
             return
         self.interrupt_button.setEnabled(False)
-        self.interrupt_button.setText("Sending Ctrl+U — apply PoE now…")
+        self.bootloader_start_index = len(self.transcript)
+        self.interrupt_button.setText("2. Sending Ctrl+U — reconnect PoE now…")
+        self.workflow_status.setText(
+            "Reconnect Ethernet/PoE now. Ctrl+U will continue until HKVS # appears."
+        )
         self._append_system(
             "Sending Ctrl+U for up to 12 seconds; apply PoE now. "
             "The window stops automatically at HKVS #."
@@ -394,14 +431,157 @@ class RecoveryWindow(QMainWindow):
         QTimer.singleShot(12_500, self._reset_interrupt_button)
 
     def _reset_interrupt_button(self) -> None:
+        self.interrupt_button.setEnabled(
+            self.serial.connected and self.power_cycle_ready and bool(self.hardware_profile)
+        )
+        self.interrupt_button.setText("2. Start Ctrl+U boot-interrupt window")
+
+    def _capture_hardware_profile(self) -> None:
+        if not self.serial.connected:
+            QMessageBox.warning(self, "Serial disconnected", "Connect the serial console first.")
+            return
+        if "HKVS #" in self.transcript[-256:].upper():
+            QMessageBox.warning(
+                self,
+                "Camera is in U-Boot",
+                "Step 1 runs from the normal Linux # prompt. Power-cycle the camera and let "
+                "it finish booting normally before capturing the hardware profile.",
+            )
+            return
+        self.hardware_profile = ""
+        self.hardware_profile_path = None
+        self.fingerprint = None
+        self.power_cycle_ready = False
+        self.capture_button.setEnabled(False)
+        self.interrupt_button.setEnabled(False)
+        self.probe_button.setEnabled(False)
+        self._append_system(
+            "Step 1: capturing read-only Linux hardware evidence with dmesg, "
+            "/proc/mtd, and /proc/cpuinfo"
+        )
+        self.capture_start_index = len(self.transcript)
+        self.workflow_status.setText("Capturing hardware profile…")
+        threading.Thread(target=self.serial.capture_hardware_profile, daemon=True).start()
+        self.capture_timer.start()
+        QTimer.singleShot(30_000, self._hardware_capture_timeout)
+
+    def _check_hardware_capture(self) -> None:
+        if self.capture_start_index is None:
+            self.capture_timer.stop()
+            return
+        captured = self.transcript[self.capture_start_index :]
+        end_marker = re.search(
+            rf"(?:^|[\r\n]){re.escape(HARDWARE_PROFILE_END)}(?:[\r\n]|$)", captured
+        )
+        if end_marker is None:
+            return
+        self.capture_timer.stop()
+        self.hardware_profile = captured[: end_marker.end()]
+        self.capture_start_index = None
+
+        preliminary = FingerprintAnalyzer.analyze("", self.hardware_profile)
+        if not (preliminary.soc or preliminary.nand):
+            self.capture_button.setEnabled(self.serial.connected)
+            self.workflow_status.setText(
+                "Hardware capture did not contain proven SoC or NAND evidence."
+            )
+            QMessageBox.warning(
+                self,
+                "Hardware evidence not found",
+                "The read-only commands finished, but the expected Ambarella S3L or Micron "
+                "NAND evidence was not found. No write controls were unlocked.",
+            )
+            return
+
+        try:
+            self.hardware_profile_path = self._save_hardware_profile(self.hardware_profile)
+        except OSError as exc:
+            self.capture_button.setEnabled(self.serial.connected)
+            self.workflow_status.setText(
+                "Hardware captured, but the evidence file could not be saved."
+            )
+            QMessageBox.critical(self, "Unable to save hardware profile", str(exc))
+            return
+
+        self._append_system(f"Hardware profile saved to {self.hardware_profile_path}")
+        self.workflow_status.setText(
+            f"Step 1 complete. Evidence saved to {self.hardware_profile_path}"
+        )
+        QMessageBox.information(
+            self,
+            "Step 1 complete — unplug PoE",
+            f"The hardware profile was captured and saved to:\n\n{self.hardware_profile_path}\n\n"
+            "Unplug the camera's Ethernet/PoE cable now, then click OK. "
+            "The app will count down a 10-second power-off wait.",
+        )
+        self.power_cycle_seconds = 10
+        self.workflow_status.setText(
+            "Keep Ethernet/PoE unplugged — power-off wait: 10 seconds remaining."
+        )
+        self.power_cycle_timer.start()
+
+    def _hardware_capture_timeout(self) -> None:
+        if self.capture_start_index is None:
+            return
+        self.capture_timer.stop()
+        self.capture_start_index = None
+        self.capture_button.setEnabled(self.serial.connected)
+        self.workflow_status.setText("Hardware capture timed out; no evidence was accepted.")
+        QMessageBox.warning(
+            self,
+            "Hardware capture timed out",
+            "The camera did not return the complete read-only hardware profile. Confirm it is "
+            "fully booted at the Linux # prompt and try Step 1 again.",
+        )
+
+    def _save_hardware_profile(self, profile: str) -> Path:
+        folder = Path.home() / "Documents" / "ADC-VC726 Recovery Logs"
+        folder.mkdir(parents=True, exist_ok=True)
+        report = FingerprintAnalyzer.analyze("", profile)
+        mac = report.evidence.get("hardware_mac", "unknown-mac").replace(":", "-")
+        path = folder / f"ADC-VC726-hardware-{mac}-{datetime.now():%Y%m%d-%H%M%S}.log"
+        path.write_text(profile, encoding="utf-8")
+        return path
+
+    def _power_cycle_tick(self) -> None:
+        self.power_cycle_seconds -= 1
+        if self.power_cycle_seconds > 0:
+            self.workflow_status.setText(
+                "Keep Ethernet/PoE unplugged — power-off wait: "
+                f"{self.power_cycle_seconds} seconds remaining."
+            )
+            return
+        self.power_cycle_timer.stop()
+        self.power_cycle_ready = True
         self.interrupt_button.setEnabled(self.serial.connected)
-        self.interrupt_button.setText("Start Ctrl+U boot-interrupt window")
+        self.workflow_status.setText(
+            "Power-off wait complete. Click Step 2 first, then reconnect Ethernet/PoE "
+            "when the button tells you."
+        )
+        QMessageBox.information(
+            self,
+            "Ready for Step 2",
+            "Keep PoE unplugged. Click “2. Start Ctrl+U boot-interrupt window,” then "
+            "reconnect Ethernet/PoE when the button says to do so.",
+        )
 
     def _run_probe(self) -> None:
         if not self.serial.connected:
             QMessageBox.warning(self, "Serial disconnected", "Connect the serial console first.")
             return
-        if "HKVS" not in self.transcript.upper():
+        if not self.hardware_profile:
+            QMessageBox.warning(
+                self,
+                "Hardware profile missing",
+                "Complete Step 1 and save the hardware profile before checking U-Boot.",
+            )
+            return
+        bootloader_transcript = (
+            self.transcript[self.bootloader_start_index :]
+            if self.bootloader_start_index is not None
+            else ""
+        )
+        if "HKVS #" not in bootloader_transcript.upper():
             QMessageBox.warning(
                 self,
                 "Bootloader prompt not seen",
@@ -413,15 +593,24 @@ class RecoveryWindow(QMainWindow):
         QTimer.singleShot(1800, self._analyze_fingerprint)
 
     def _analyze_fingerprint(self) -> None:
-        self.fingerprint = FingerprintAnalyzer.analyze(self.transcript)
+        bootloader_transcript = (
+            self.transcript[self.bootloader_start_index :]
+            if self.bootloader_start_index is not None
+            else ""
+        )
+        self.fingerprint = FingerprintAnalyzer.analyze(
+            bootloader_transcript, self.hardware_profile
+        )
         report = self.fingerprint
         rows = [
+            ("saved hardware profile", report.profile_captured),
             ("HKVS prompt", report.prompt),
             ("S3L33M/Ambarella evidence", report.soc),
             ("Micron NAND evidence", report.nand),
             ("sensor 0x3013/type 42", report.sensor),
             (f"ipaddr in {', '.join(SUPPORTED_CAMERA_IPS)}", report.camera_ip),
             (f"serverip={EXPECTED_SERVER_IP}", report.server_ip),
+            ("captured MAC matches U-Boot ethaddr", report.mac_match),
         ]
         text = "  |  ".join(f"{'✓' if good else '✗'} {name}" for name, good in rows)
         self.fingerprint_status.setText(text)
@@ -429,7 +618,7 @@ class RecoveryWindow(QMainWindow):
             "color:#187a2f;" if report.readonly_gate_passed else "color:#b00020;"
         )
         self._append_system(
-            f"Fingerprint: {report.matched_count}/6 indicators; "
+            f"Fingerprint: {report.matched_count}/8 indicators; "
             f"read-only gate {'passed' if report.readonly_gate_passed else 'blocked'}"
         )
         if report.camera_ip:
@@ -566,8 +755,17 @@ class RecoveryWindow(QMainWindow):
         cursor.insertText(text)
         self.terminal.setTextCursor(cursor)
         self.terminal.ensureCursorVisible()
-        if "HKVS #" in self.transcript[-128:].upper():
+        if (
+            self.bootloader_start_index is not None
+            and "HKVS #" in self.transcript[-128:].upper()
+        ):
             self._reset_interrupt_button()
+            if self.hardware_profile:
+                self.probe_button.setEnabled(True)
+                self.workflow_status.setText(
+                    "HKVS # detected. Click Step 3 to combine the saved hardware profile "
+                    "with the live bootloader settings."
+                )
 
     def _append_system(self, message: str) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")

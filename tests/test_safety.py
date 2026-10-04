@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from vc726_recovery.constants import HARDWARE_PROFILE_BEGIN, HARDWARE_PROFILE_END
 from vc726_recovery.fingerprint import FingerprintAnalyzer
 from vc726_recovery.firmware import FirmwareReport
 from vc726_recovery.safety import ManualConfirmations, SafetyGate
@@ -17,7 +18,16 @@ def valid_firmware() -> FirmwareReport:
 
 
 def valid_fingerprint():
-    return FingerprintAnalyzer.analyze("HKVS # S3L33M ipaddr=192.168.1.65 serverip=192.168.1.128")
+    hardware = (
+        f"{HARDWARE_PROFILE_BEGIN}\nS3L33M\n"
+        "MAC Address[b8:3a:9d:14:02:37]\n"
+        f"{HARDWARE_PROFILE_END}"
+    )
+    bootloader = (
+        "HKVS # ipaddr=192.168.1.65 serverip=192.168.1.128 "
+        "ethaddr=b8:3a:9d:14:02:37"
+    )
+    return FingerprintAnalyzer.analyze(bootloader, hardware)
 
 
 def all_confirmed() -> ManualConfirmations:
