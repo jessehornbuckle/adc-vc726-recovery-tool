@@ -45,6 +45,7 @@ from .constants import (
     EXPECTED_SOC,
     FIRMWARE_SOURCE_URL,
     FLASH_COMMAND,
+    HARDWARE_PROFILE_BEGIN,
     HARDWARE_PROFILE_END,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
@@ -456,8 +457,7 @@ class RecoveryWindow(QMainWindow):
         self.interrupt_button.setEnabled(False)
         self.probe_button.setEnabled(False)
         self._append_system(
-            "Step 1: capturing read-only Linux hardware evidence with dmesg, "
-            "/proc/mtd, and /proc/cpuinfo"
+            "Step 1: capturing read-only Linux hardware evidence with dmesg"
         )
         self.capture_start_index = len(self.transcript)
         self.workflow_status.setText("Capturing hardware profile…")
@@ -470,26 +470,28 @@ class RecoveryWindow(QMainWindow):
             self.capture_timer.stop()
             return
         captured = self.transcript[self.capture_start_index :]
-        end_marker = re.search(
-            rf"(?:^|[\r\n]){re.escape(HARDWARE_PROFILE_END)}(?:[\r\n]|$)", captured
-        )
-        if end_marker is None:
+        returned_prompt = re.search(r"(?:^|[\r\n])#\s*(?:[\r\n]|$)", captured)
+        if returned_prompt is None:
             return
         self.capture_timer.stop()
-        self.hardware_profile = captured[: end_marker.end()]
+        shell_output = captured[: returned_prompt.end()]
+        self.hardware_profile = (
+            f"{HARDWARE_PROFILE_BEGIN}\n{shell_output}\n{HARDWARE_PROFILE_END}\n"
+        )
         self.capture_start_index = None
 
         preliminary = FingerprintAnalyzer.analyze("", self.hardware_profile)
-        if not (preliminary.soc or preliminary.nand):
+        if not (preliminary.soc or preliminary.nand) or "hardware_mac" not in preliminary.evidence:
             self.capture_button.setEnabled(self.serial.connected)
             self.workflow_status.setText(
-                "Hardware capture did not contain proven SoC or NAND evidence."
+                "Hardware capture did not contain the required platform and MAC evidence."
             )
             QMessageBox.warning(
                 self,
                 "Hardware evidence not found",
                 "The read-only commands finished, but the expected Ambarella S3L or Micron "
-                "NAND evidence was not found. No write controls were unlocked.",
+                "NAND evidence and camera MAC were not both found. No write controls were "
+                "unlocked.",
             )
             return
 

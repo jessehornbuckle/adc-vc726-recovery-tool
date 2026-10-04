@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.4/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.0-alpha.5/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.4).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.0-alpha.5).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.0-alpha.4` supports only this proven combination:
+Version `0.1.0-alpha.5` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -35,8 +35,8 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 
 - detects USB serial adapters;
 - opens the UART at 115200 8-N-1;
-- captures `dmesg`, `/proc/mtd`, and `/proc/cpuinfo` from the running camera using
-  read-only commands and automatically saves the bounded hardware evidence;
+- captures `dmesg` from the running camera using the read-only command supported by
+  Hikvision's protected shell and automatically saves the bounded hardware evidence;
 - guides the user through a 10-second PoE power-off wait;
 - repeatedly sends `Ctrl+U` during the short U-Boot countdown;
 - runs only `help` and `printenv` during the read-only fingerprint check;
@@ -83,8 +83,8 @@ uv run python run_app.py
 2. Connect only UART ground, TX, and RX. Leave both supply pins disconnected.
 3. Select `digicap.dav` and let the app verify its exact hash and size.
 4. Connect the UART and let the camera finish a normal boot to its Linux `#` prompt.
-5. Click **1. Capture and save hardware profile**. The app runs only read-only Linux
-   commands and saves the result under `Documents/ADC-VC726 Recovery Logs`.
+5. Click **1. Capture and save hardware profile**. The app runs the protected shell's
+   read-only `dmesg` command and saves the result under `Documents/ADC-VC726 Recovery Logs`.
 6. When prompted, unplug Ethernet/PoE and confirm. Keep it unplugged during the app's
    10-second power-off countdown.
 7. Click **2. Start Ctrl+U boot-interrupt window**, then reconnect Ethernet/PoE when the

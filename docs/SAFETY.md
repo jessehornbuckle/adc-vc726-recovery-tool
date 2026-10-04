@@ -27,8 +27,9 @@ Before any write command, the app requires:
   `192.168.1.66`) and the expected TFTP-server address (`192.168.1.128`);
 - the MAC address captured from Linux to exactly match U-Boot's live `ethaddr`.
 
-Step 1 sends only `echo` boundary markers, `dmesg`, `cat /proc/mtd`, and
-`cat /proc/cpuinfo`. Step 3 sends only `help` and `printenv`. All are read-only.
+Step 1 sends only `dmesg`, which is supported by the camera's protected Linux shell;
+the app adds its own capture boundaries after the shell prompt returns. Step 3 sends
+only `help` and `printenv`. All are read-only.
 
 ## Gate 4: controlled transfer
 
