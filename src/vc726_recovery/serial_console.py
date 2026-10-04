@@ -35,6 +35,9 @@ class SerialConsole:
         self._serial: serial.Serial | None = None
         self._reader: threading.Thread | None = None
         self._stop = threading.Event()
+        self._interrupt_stop = threading.Event()
+        self._interrupt_lock = threading.Lock()
+        self._prompt_window = ""
         self._write_lock = threading.Lock()
 
     @property
@@ -45,6 +48,8 @@ class SerialConsole:
         if self.connected:
             self.disconnect()
         self._stop.clear()
+        self._interrupt_stop.clear()
+        self._prompt_window = ""
         self._serial = serial.Serial(
             port=port,
             baudrate=SERIAL_BAUDRATE,
@@ -62,6 +67,7 @@ class SerialConsole:
 
     def disconnect(self) -> None:
         self._stop.set()
+        self._interrupt_stop.set()
         serial_port = self._serial
         self._serial = None
         if serial_port:
@@ -84,13 +90,24 @@ class SerialConsole:
         cleaned = command.strip("\r\n")
         self.send_bytes(cleaned.encode("ascii", errors="strict") + b"\r\n")
 
-    def interrupt_boot(self, attempts: int = 12, interval: float = 0.08) -> None:
-        """Send Ctrl+U repeatedly across the short bootloader countdown."""
-        for _ in range(attempts):
-            if not self.connected:
-                return
-            self.send_bytes(BOOT_INTERRUPT)
-            time.sleep(interval)
+    def interrupt_boot(self, attempts: int = 120, interval: float = 0.1) -> None:
+        """Send Ctrl+U across power-up, stopping when the HKVS prompt appears."""
+        if not self._interrupt_lock.acquire(blocking=False):
+            return
+        self._interrupt_stop.clear()
+        try:
+            for _ in range(attempts):
+                if not self.connected or self._interrupt_stop.is_set():
+                    return
+                self.send_bytes(BOOT_INTERRUPT)
+                time.sleep(interval)
+        finally:
+            self._interrupt_lock.release()
+
+    def _observe_boot_prompt(self, text: str) -> None:
+        self._prompt_window = (self._prompt_window + text)[-128:]
+        if "HKVS #" in self._prompt_window.upper():
+            self._interrupt_stop.set()
 
     def run_readonly_probe(self) -> None:
         """Request only non-mutating U-Boot information."""
@@ -120,6 +137,7 @@ class SerialConsole:
                         remainder = remainder[1:]
                     decoder_buffer = remainder
                     continue
+                self._observe_boot_prompt(text)
                 self._on_text(text)
         except (serial.SerialException, OSError) as exc:
             if not self._stop.is_set():

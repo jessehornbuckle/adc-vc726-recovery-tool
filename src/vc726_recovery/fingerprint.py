@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .constants import SUPPORTED_CAMERA_IPS
+
 
 class UpdateOutcome(str, Enum):
     UNKNOWN = "unknown"
@@ -37,6 +39,7 @@ class FingerprintReport:
 
 
 class FingerprintAnalyzer:
+    _supported_camera_ips = "|".join(re.escape(address) for address in SUPPORTED_CAMERA_IPS)
     _patterns = {
         "prompt": re.compile(r"HKVS\s*#", re.IGNORECASE),
         "soc": re.compile(r"(?:S3L33M|Ambarella\s+S3L|S3L\s+Olive)", re.IGNORECASE),
@@ -48,7 +51,9 @@ class FingerprintAnalyzer:
         "sensor": re.compile(
             r"(?:sensor.{0,30}(?:0x)?3013|sensor\s+type\s*[:=]?\s*42)", re.IGNORECASE
         ),
-        "camera_ip": re.compile(r"ipaddr\s*=\s*192\.168\.1\.65", re.IGNORECASE),
+        "camera_ip": re.compile(
+            rf"ipaddr\s*=\s*(?:{_supported_camera_ips})", re.IGNORECASE
+        ),
         "server_ip": re.compile(r"serverip\s*=\s*192\.168\.1\.128", re.IGNORECASE),
     }
 

@@ -37,7 +37,6 @@ from .constants import (
     APP_NAME,
     APP_VERSION,
     EXPECTED_BOARD,
-    EXPECTED_CAMERA_IP,
     EXPECTED_FIRMWARE_SHA256,
     EXPECTED_MODEL,
     EXPECTED_NAND,
@@ -47,6 +46,7 @@ from .constants import (
     FLASH_COMMAND,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
+    SUPPORTED_CAMERA_IPS,
     TFTP_PORT,
 )
 from .fingerprint import (
@@ -224,7 +224,7 @@ class RecoveryWindow(QMainWindow):
         layout.addWidget(cable_warning)
 
         controls = QHBoxLayout()
-        self.interrupt_button = QPushButton("Arm Ctrl+U boot interrupt")
+        self.interrupt_button = QPushButton("Start Ctrl+U boot-interrupt window")
         self.interrupt_button.clicked.connect(self._interrupt_boot)
         self.probe_button = QPushButton("Run read-only fingerprint check")
         self.probe_button.clicked.connect(self._run_probe)
@@ -258,7 +258,7 @@ class RecoveryWindow(QMainWindow):
         server_form = QFormLayout(server_group)
         self.server_ip = QLineEdit(EXPECTED_SERVER_IP)
         self.server_ip.setToolTip("Must match U-Boot serverip and be assigned to this computer")
-        self.camera_ip = QLineEdit(EXPECTED_CAMERA_IP)
+        self.camera_ip = QLineEdit("Detected after fingerprint check")
         self.camera_ip.setReadOnly(True)
         self.tftp_button = QPushButton("Start verified TFTP server")
         self.tftp_button.clicked.connect(self._toggle_tftp)
@@ -384,8 +384,18 @@ class RecoveryWindow(QMainWindow):
         if not self.serial.connected:
             QMessageBox.warning(self, "Serial disconnected", "Connect the serial console first.")
             return
-        self._append_system("Sending Ctrl+U across the bootloader countdown…")
+        self.interrupt_button.setEnabled(False)
+        self.interrupt_button.setText("Sending Ctrl+U — apply PoE now…")
+        self._append_system(
+            "Sending Ctrl+U for up to 12 seconds; apply PoE now. "
+            "The window stops automatically at HKVS #."
+        )
         threading.Thread(target=self.serial.interrupt_boot, daemon=True).start()
+        QTimer.singleShot(12_500, self._reset_interrupt_button)
+
+    def _reset_interrupt_button(self) -> None:
+        self.interrupt_button.setEnabled(self.serial.connected)
+        self.interrupt_button.setText("Start Ctrl+U boot-interrupt window")
 
     def _run_probe(self) -> None:
         if not self.serial.connected:
@@ -410,7 +420,7 @@ class RecoveryWindow(QMainWindow):
             ("S3L33M/Ambarella evidence", report.soc),
             ("Micron NAND evidence", report.nand),
             ("sensor 0x3013/type 42", report.sensor),
-            (f"ipaddr={EXPECTED_CAMERA_IP}", report.camera_ip),
+            (f"ipaddr in {', '.join(SUPPORTED_CAMERA_IPS)}", report.camera_ip),
             (f"serverip={EXPECTED_SERVER_IP}", report.server_ip),
         ]
         text = "  |  ".join(f"{'✓' if good else '✗'} {name}" for name, good in rows)
@@ -422,6 +432,9 @@ class RecoveryWindow(QMainWindow):
             f"Fingerprint: {report.matched_count}/6 indicators; "
             f"read-only gate {'passed' if report.readonly_gate_passed else 'blocked'}"
         )
+        if report.camera_ip:
+            detected = report.evidence["camera_ip"].partition("=")[2].strip()
+            self.camera_ip.setText(detected)
         self._update_gate()
 
     def _toggle_tftp(self) -> None:
@@ -553,6 +566,8 @@ class RecoveryWindow(QMainWindow):
         cursor.insertText(text)
         self.terminal.setTextCursor(cursor)
         self.terminal.ensureCursorVisible()
+        if "HKVS #" in self.transcript[-128:].upper():
+            self._reset_interrupt_button()
 
     def _append_system(self, message: str) -> None:
         stamp = datetime.now().strftime("%H:%M:%S")

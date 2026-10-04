@@ -21,7 +21,8 @@ A renamed or modified file cannot pass.
 Before any write command, the app requires:
 
 - the `HKVS #` prompt;
-- the expected camera and TFTP-server addresses;
+- one of the explicitly proven per-camera bootloader addresses (`192.168.1.65` or
+  `192.168.1.66`) and the expected TFTP-server address (`192.168.1.128`);
 - evidence of the expected Ambarella S3L or Micron NAND platform.
 
 The probe sends only `help` and `printenv`.

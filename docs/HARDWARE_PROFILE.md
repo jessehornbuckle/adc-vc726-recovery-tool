@@ -1,6 +1,7 @@
 # Proven ADC-VC726 hardware profile
 
-This profile comes from one successfully recovered test camera and must be treated as an exact-match profile—not as a family resemblance.
+This profile comes from one successfully recovered camera and a second read-only verified
+camera. It must be treated as an exact-match profile—not as a family resemblance.
 
 ## Physical identifiers
 
@@ -27,7 +28,7 @@ Never rely on wire color alone. Read the board silkscreen and confirm ground ele
 - Format: `115200 8-N-1`, no flow control
 - Boot interrupt: `Ctrl+U`
 - Prompt: `HKVS #`
-- `ipaddr=192.168.1.65`
+- Proven per-camera `ipaddr` values: `192.168.1.65` and `192.168.1.66`
 - `serverip=192.168.1.128`
 - Working update command: `upd digicap.dav`
 
@@ -37,6 +38,7 @@ Never rely on wire color alone. Read the board silkscreen and confirm ground ele
 - Sensor type: `42`
 - Sensor ID: `0x3013`
 - NAND ID: `0x2c:0xf1`
+- NAND geometry: 128 MiB, 2 KiB pages, 64-byte OOB, 6-bit BCH ECC
 - Internal product ID observed through SADP: `DS-2CDVT-FCMPTN-S`
 
 ## Firmware profile

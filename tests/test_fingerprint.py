@@ -23,6 +23,22 @@ def test_prompt_and_network_alone_are_not_enough():
     assert not report.readonly_gate_passed
 
 
+def test_second_proven_camera_bootloader_ip_passes():
+    transcript = PROVEN_TRANSCRIPT.replace("192.168.1.65", "192.168.1.66")
+    report = FingerprintAnalyzer.analyze(transcript)
+
+    assert report.readonly_gate_passed
+    assert report.matched_count == 6
+
+
+def test_unproven_camera_bootloader_ip_is_rejected():
+    transcript = PROVEN_TRANSCRIPT.replace("192.168.1.65", "192.168.1.67")
+    report = FingerprintAnalyzer.analyze(transcript)
+
+    assert not report.camera_ip
+    assert not report.readonly_gate_passed
+
+
 def test_update_outcome_prefers_short_write_over_generic_failure():
     assert (
         classify_update_output("failed: short write /dav/IElang.tar") == UpdateOutcome.SHORT_WRITE
