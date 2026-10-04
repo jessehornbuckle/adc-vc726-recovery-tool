@@ -1,3 +1,4 @@
+import shlex
 import subprocess
 
 from vc726_recovery.privileged_tftp import PrivilegedMacTftpServer
@@ -41,8 +42,10 @@ def test_privileged_server_uses_one_macos_admin_command(monkeypatch, tmp_path):
     assert "--interface en5" in script
     assert "--host 192.168.1.128" in script
     normalized_script = script.replace("\\\\", "\\")
-    assert f"--file {work / 'digicap.dav'}" in normalized_script
-    assert f">{work / 'helper.log'}" in normalized_script
+    staged_argument = shlex.quote(str(work / "digicap.dav"))
+    log_argument = shlex.quote(str(work / "helper.log"))
+    assert f"--file {staged_argument}" in normalized_script
+    assert f">{log_argument}" in normalized_script
     assert (work / "digicap.dav").read_bytes() == b"placeholder"
     server.stop()
 
