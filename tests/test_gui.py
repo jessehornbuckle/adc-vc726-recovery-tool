@@ -50,3 +50,48 @@ def test_camera_login_action_opens_exact_recovered_address(monkeypatch):
         window.close()
 
     assert opened == [RECOVERED_CAMERA_URL]
+
+
+def test_boot_wait_message_explains_blank_page_and_countdown():
+    text = gui.RecoveryWindow._camera_boot_wait_text(60)
+
+    assert "camera login page will not be available" in text
+    assert "blank or unavailable page" in text
+    assert "open automatically in 60 seconds" in text
+    assert RECOVERED_CAMERA_URL in text
+
+
+def test_completed_boot_wait_closes_prompt_and_opens_camera(monkeypatch):
+    _app()
+    window = gui.RecoveryWindow()
+    calls = []
+
+    class FakeMessage:
+        def accept(self):
+            calls.append("accepted")
+
+    class FakeTimer:
+        def stop(self):
+            calls.append("stopped")
+
+    monkeypatch.setattr(window, "_open_camera_setup", lambda: calls.append("opened"))
+    try:
+        window._finish_camera_boot_wait(FakeMessage(), FakeTimer())
+    finally:
+        window.close()
+
+    assert calls == ["stopped", "accepted", "opened"]
+
+
+def test_success_prompt_automatically_opens_after_countdown(monkeypatch):
+    _app()
+    window = gui.RecoveryWindow()
+    opened = []
+    monkeypatch.setattr(gui, "POST_FLASH_BOOT_WAIT_SECONDS", 1)
+    monkeypatch.setattr(window, "_open_camera_setup", lambda: opened.append(True))
+    try:
+        window._show_flash_success()
+    finally:
+        window.close()
+
+    assert opened == [True]

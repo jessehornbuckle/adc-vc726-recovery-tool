@@ -52,6 +52,7 @@ from .constants import (
     HARDWARE_PROFILE_END,
     LINUX_HELP_COMMAND,
     LINUX_REBOOT_COMMAND,
+    POST_FLASH_BOOT_WAIT_SECONDS,
     RECOVERED_CAMERA_IP,
     RECOVERED_CAMERA_URL,
     RISK_PHRASE,
@@ -1032,23 +1033,45 @@ class RecoveryWindow(QMainWindow):
     def _show_flash_success(self) -> None:
         message = QMessageBox(self)
         message.setIcon(QMessageBox.Icon.Information)
-        message.setWindowTitle("Flash successful")
-        message.setText("The camera firmware was flashed successfully.")
-        message.setInformativeText(
-            "Keep PoE connected while the first Hikvision boot finishes. Then use this "
-            "address to activate, configure, or log in to the camera:\n\n"
-            f"{RECOVERED_CAMERA_URL}\n\n"
-            "If the page is not ready yet, wait a minute and use the same green button "
-            "on the finished screen. TFTP is no longer needed after the reboot."
+        message.setWindowTitle("Flash successful — camera booting")
+        message.setText("The firmware flash is complete. The camera is now booting.")
+        remaining = [POST_FLASH_BOOT_WAIT_SECONDS]
+        message.setInformativeText(self._camera_boot_wait_text(remaining[0]))
+        cancel_button = message.addButton(
+            "Do not open automatically", QMessageBox.ButtonRole.RejectRole
         )
-        open_button = message.addButton(
-            "Open camera setup/login", QMessageBox.ButtonRole.AcceptRole
-        )
-        message.addButton("Close", QMessageBox.ButtonRole.RejectRole)
-        message.setDefaultButton(open_button)
+        message.setDefaultButton(cancel_button)
+
+        countdown = QTimer(message)
+        countdown.setInterval(1000)
+
+        def tick() -> None:
+            remaining[0] -= 1
+            if remaining[0] <= 0:
+                self._finish_camera_boot_wait(message, countdown)
+                return
+            message.setInformativeText(self._camera_boot_wait_text(remaining[0]))
+
+        countdown.timeout.connect(tick)
+        countdown.start()
         message.exec()
-        if message.clickedButton() is open_button:
-            self._open_camera_setup()
+        countdown.stop()
+
+    @staticmethod
+    def _camera_boot_wait_text(seconds: int) -> str:
+        unit = "second" if seconds == 1 else "seconds"
+        return (
+            "Keep PoE and Ethernet connected. The camera login page will not be available "
+            "until startup finishes; opening it early may show a blank or unavailable page.\n\n"
+            f"The login page will open automatically in {seconds} {unit}:\n"
+            f"{RECOVERED_CAMERA_URL}\n\n"
+            "TFTP is no longer needed after the reboot."
+        )
+
+    def _finish_camera_boot_wait(self, message: QMessageBox, countdown: QTimer) -> None:
+        countdown.stop()
+        message.accept()
+        self._open_camera_setup()
 
     def _open_camera_setup(self) -> None:
         if not QDesktopServices.openUrl(QUrl(RECOVERED_CAMERA_URL)):
