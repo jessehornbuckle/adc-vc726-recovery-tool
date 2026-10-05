@@ -6,8 +6,13 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build:
+    environment: windows-signing
     strategy:
       fail-fast: false
       matrix:
@@ -140,6 +145,43 @@ jobs:
           Start-Sleep -Seconds 3
           if ($process.HasExited) { throw "Packaged application exited unexpectedly" }
           Stop-Process -Id $process.Id
+      - name: Sign in to Azure for Windows signing
+        if: runner.os == 'Windows'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows application
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\\dist\\ADC-VC726-Recovery\\ADC-VC726-Recovery.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: ADC-VC726 Recovery Tool
+          description-url: https://github.com/jessehornbuckle/adc-vc726-recovery-tool
+      - name: Verify Windows signature and timestamp
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $appPath = "dist/ADC-VC726-Recovery/ADC-VC726-Recovery.exe"
+          $signature = Get-AuthenticodeSignature -FilePath $appPath
+          $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+
+          if ($signature.Status -ne "Valid") {
+            throw "Authenticode verification failed: $($signature.Status) - $($signature.StatusMessage)"
+          }
+          if ($null -eq $signature.SignerCertificate) {
+            throw "The Windows executable does not contain a signer certificate."
+          }
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw "The Windows executable does not contain an RFC 3161 timestamp."
+          }
       - name: Archive macOS app
         if: runner.os == 'macOS'
         shell: bash
