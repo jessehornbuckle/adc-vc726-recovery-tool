@@ -27,7 +27,8 @@ def test_proven_fingerprint_passes_readonly_gate():
     report = FingerprintAnalyzer.analyze(PROVEN_TRANSCRIPT, PROVEN_HARDWARE_PROFILE)
 
     assert report.readonly_gate_passed
-    assert report.matched_count == 8
+    assert report.matched_count == 7
+    assert report.camera_ip == "192.168.1.65"
 
 
 def test_prompt_and_network_alone_are_not_enough():
@@ -43,15 +44,29 @@ def test_second_proven_camera_bootloader_ip_passes():
     report = FingerprintAnalyzer.analyze(transcript, PROVEN_HARDWARE_PROFILE)
 
     assert report.readonly_gate_passed
-    assert report.matched_count == 8
+    assert report.matched_count == 7
 
 
-def test_unproven_camera_bootloader_ip_is_rejected():
-    transcript = PROVEN_TRANSCRIPT.replace("192.168.1.65", "192.168.1.67")
+def test_installer_assigned_bootloader_ip_is_read_but_not_a_hardware_gate():
+    transcript = PROVEN_TRANSCRIPT.replace("192.168.1.65", "192.168.1.69")
     report = FingerprintAnalyzer.analyze(transcript, PROVEN_HARDWARE_PROFILE)
 
-    assert not report.camera_ip
-    assert not report.readonly_gate_passed
+    assert report.camera_ip == "192.168.1.69"
+    assert report.readonly_gate_passed
+
+
+def test_missing_or_invalid_bootloader_ip_does_not_change_hardware_gate():
+    missing = FingerprintAnalyzer.analyze(
+        PROVEN_TRANSCRIPT.replace("ipaddr=192.168.1.65\n", ""), PROVEN_HARDWARE_PROFILE
+    )
+    invalid = FingerprintAnalyzer.analyze(
+        PROVEN_TRANSCRIPT.replace("192.168.1.65", "not-an-ip"), PROVEN_HARDWARE_PROFILE
+    )
+
+    assert missing.camera_ip is None
+    assert invalid.camera_ip is None
+    assert missing.readonly_gate_passed
+    assert invalid.readonly_gate_passed
 
 
 def test_hardware_and_bootloader_mac_must_match():

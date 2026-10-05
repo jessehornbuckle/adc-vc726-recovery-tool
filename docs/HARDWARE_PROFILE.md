@@ -28,7 +28,8 @@ Never rely on wire color alone. Read the board silkscreen and confirm ground ele
 - Format: `115200 8-N-1`, no flow control
 - Boot interrupt: `Ctrl+U`
 - Prompt: `HKVS #`
-- Proven per-camera `ipaddr` values: `192.168.1.65` and `192.168.1.66`
+- Observed per-camera `ipaddr` values: `192.168.1.65`, `192.168.1.66`, and
+  `192.168.1.69`; this installer-assigned network setting is detected but is not hardware identity
 - `serverip=192.168.1.128`
 - Working update command: `upd digicap.dav`
 

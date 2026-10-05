@@ -4,9 +4,9 @@ A guarded Windows/macOS desktop utility for converting a **verified Alarm.com AD
 
 ## Download
 
-**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.1-alpha.9/ADC-VC726-Recovery-macOS-arm64.zip)**
+**[Download the signed and notarized Mac app (Apple Silicon)](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/download/v0.1.2-alpha.1/ADC-VC726-Recovery-macOS-arm64.zip)**
 
-[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.1-alpha.9).
+[View the release notes and all available downloads](https://github.com/jessehornbuckle/adc-vc726-recovery-tool/releases/tag/v0.1.2-alpha.1).
 
 The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the repetitive work, preserve the evidence, and refuse to write when the known hardware and firmware checks do not match.
 
@@ -15,7 +15,7 @@ The goal is a right-to-repair tool in the spirit of JungleFlasher: automate the 
 
 ## Supported hardware profile
 
-Version `0.1.1-alpha.9` supports only this proven combination:
+Version `0.1.2-alpha.1` supports only this proven combination:
 
 | Item | Required value |
 |---|---|
@@ -26,7 +26,7 @@ Version `0.1.1-alpha.9` supports only this proven combination:
 | Sensor reported by original firmware | type `42`, ID `0x3013` |
 | Original firmware | `V5.5.82 build 210706` |
 | Replacement platform | Hikvision G1 `V5.5.82 build 181211` |
-| Proven U-Boot client IPs | `192.168.1.65`, `192.168.1.66` |
+| U-Boot client IP | Detected from `ipaddr`; treated as a network setting, not hardware identity |
 | U-Boot TFTP server IP | `192.168.1.128` |
 
 If any identifier differs, stop. Similar-looking Alarm.com cameras can contain incompatible hardware.
@@ -44,6 +44,8 @@ If any identifier differs, stop. Similar-looking Alarm.com cameras can contain i
 - guides the user through a 10-second PoE power-off wait;
 - repeatedly sends `Ctrl+U` during the short U-Boot countdown;
 - runs only `help` and `printenv` during the read-only fingerprint check;
+- reads and displays U-Boot's installer-assigned `ipaddr` for network setup without using
+  that address as a hardware pass/fail indicator;
 - requires the saved Linux profile MAC to match U-Boot's live `ethaddr`;
 - verifies the exact filename, size, and SHA-256 of `digicap.dav`;
 - serves only that verified file through a built-in TFTP server;

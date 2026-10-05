@@ -6,7 +6,11 @@ from PySide6.QtGui import QCloseEvent, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
 import vc726_recovery.gui as gui
-from vc726_recovery.constants import RECOVERED_CAMERA_URL
+from vc726_recovery.constants import (
+    HARDWARE_PROFILE_BEGIN,
+    HARDWARE_PROFILE_END,
+    RECOVERED_CAMERA_URL,
+)
 
 
 def _app() -> QApplication:
@@ -30,6 +34,35 @@ def test_application_icon_asset_is_bundled_and_readable():
     path = gui.bundled_asset_path("app-icon.png")
     assert path.is_file()
     assert not QIcon(str(path)).isNull()
+
+
+def test_installer_assigned_bootloader_ip_is_displayed_without_gating_hardware():
+    _app()
+    window = gui.RecoveryWindow()
+    try:
+        window.hardware_profile = (
+            f"{HARDWARE_PROFILE_BEGIN}\n"
+            "Micron NAND 128MiB 0x2c 0xf1\n"
+            "MAC Address[b8:3a:9d:14:0d:31]\n"
+            f"{HARDWARE_PROFILE_END}\n"
+        )
+        window.transcript = (
+            "HKVS # printenv\n"
+            "ipaddr=192.168.1.69\n"
+            "serverip=192.168.1.128\n"
+            "ethaddr=b8:3a:9d:14:0d:31\n"
+        )
+        window.bootloader_start_index = 0
+
+        window._analyze_fingerprint()
+
+        assert window.fingerprint is not None
+        assert window.fingerprint.readonly_gate_passed
+        assert window.camera_ip.text() == "192.168.1.69"
+        assert "ipaddr" not in window.fingerprint_status.text()
+        assert "network setting only" in window.transcript
+    finally:
+        window.close()
 
 
 def test_uart_pinout_dialog_shows_mapping_and_both_photos():

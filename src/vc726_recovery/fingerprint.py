@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -9,7 +10,6 @@ from enum import Enum
 from .constants import (
     HARDWARE_PROFILE_BEGIN,
     HARDWARE_PROFILE_END,
-    SUPPORTED_CAMERA_IPS,
 )
 
 _PROTECTED_SHELL_PROMPT = re.compile(
@@ -37,7 +37,7 @@ class FingerprintReport:
     soc: bool
     nand: bool
     sensor: bool
-    camera_ip: bool
+    camera_ip: str | None
     server_ip: bool
     profile_captured: bool
     mac_match: bool
@@ -49,7 +49,6 @@ class FingerprintReport:
         return (
             self.profile_captured
             and self.prompt
-            and self.camera_ip
             and self.server_ip
             and self.mac_match
             and (self.soc or self.nand)
@@ -64,7 +63,6 @@ class FingerprintReport:
                 self.soc,
                 self.nand,
                 self.sensor,
-                self.camera_ip,
                 self.server_ip,
                 self.mac_match,
             )
@@ -72,7 +70,6 @@ class FingerprintReport:
 
 
 class FingerprintAnalyzer:
-    _supported_camera_ips = "|".join(re.escape(address) for address in SUPPORTED_CAMERA_IPS)
     _patterns = {
         "prompt": re.compile(r"HKVS\s*#", re.IGNORECASE),
         "soc": re.compile(r"(?:S3L33M|Ambarella\s+S3L|S3L\s+Olive)", re.IGNORECASE),
@@ -84,14 +81,12 @@ class FingerprintAnalyzer:
         "sensor": re.compile(
             r"(?:sensor.{0,30}(?:0x)?3013|sensor\s+type\s*[:=]?\s*42)", re.IGNORECASE
         ),
-        "camera_ip": re.compile(
-            rf"ipaddr\s*=\s*(?:{_supported_camera_ips})", re.IGNORECASE
-        ),
         "server_ip": re.compile(r"serverip\s*=\s*192\.168\.1\.128", re.IGNORECASE),
     }
 
     _hardware_mac = re.compile(r"MAC Address\[([0-9a-f:]{17})\]", re.IGNORECASE)
     _bootloader_mac = re.compile(r"ethaddr\s*=\s*([0-9a-f:]{17})", re.IGNORECASE)
+    _bootloader_ip = re.compile(r"\bipaddr\s*=\s*([^\s]+)", re.IGNORECASE)
     _profile_begin = re.compile(
         rf"(?:^|[\r\n]){re.escape(HARDWARE_PROFILE_BEGIN)}(?:[\r\n]|$)"
     )
@@ -109,6 +104,16 @@ class FingerprintAnalyzer:
             found[name] = match is not None
             if match:
                 evidence[name] = " ".join(match.group(0).split())[:160]
+
+        camera_ip: str | None = None
+        bootloader_ip = cls._bootloader_ip.search(transcript)
+        if bootloader_ip:
+            try:
+                camera_ip = str(ipaddress.IPv4Address(bootloader_ip.group(1)))
+            except ipaddress.AddressValueError:
+                pass
+        if camera_ip:
+            evidence["camera_ip"] = camera_ip
 
         profile_captured = bool(
             cls._profile_begin.search(hardware_profile)
@@ -129,6 +134,7 @@ class FingerprintAnalyzer:
         return FingerprintReport(
             profile_captured=profile_captured,
             mac_match=mac_match,
+            camera_ip=camera_ip,
             evidence=evidence,
             **found,
         )

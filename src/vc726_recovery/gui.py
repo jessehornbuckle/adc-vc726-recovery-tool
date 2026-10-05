@@ -60,7 +60,6 @@ from .constants import (
     RECOVERED_CAMERA_URL,
     RISK_PHRASE,
     SERIAL_BAUDRATE,
-    SUPPORTED_CAMERA_IPS,
     TFTP_PORT,
 )
 from .fingerprint import (
@@ -785,7 +784,6 @@ class RecoveryWindow(QMainWindow):
             ("S3L33M/Ambarella evidence", report.soc),
             ("Micron NAND evidence", report.nand),
             ("sensor 0x3013/type 42", report.sensor),
-            (f"ipaddr in {', '.join(SUPPORTED_CAMERA_IPS)}", report.camera_ip),
             (f"serverip={EXPECTED_SERVER_IP}", report.server_ip),
             ("captured MAC matches U-Boot ethaddr", report.mac_match),
         ]
@@ -795,12 +793,15 @@ class RecoveryWindow(QMainWindow):
             "color:#187a2f;" if report.readonly_gate_passed else "color:#b00020;"
         )
         self._append_system(
-            f"Fingerprint: {report.matched_count}/8 indicators; "
+            f"Fingerprint: {report.matched_count}/7 indicators; "
             f"read-only gate {'passed' if report.readonly_gate_passed else 'blocked'}"
         )
         if report.camera_ip:
-            detected = report.evidence["camera_ip"].partition("=")[2].strip()
-            self.camera_ip.setText(detected)
+            self.camera_ip.setText(report.camera_ip)
+            self._append_system(
+                f"Bootloader ipaddr detected: {report.camera_ip} "
+                "(network setting only; not a hardware pass/fail indicator)"
+            )
         self._update_gate()
 
     def _toggle_tftp(self) -> None:
